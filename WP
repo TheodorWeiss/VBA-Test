@@ -1,49 +1,45 @@
-Option Explicit
-
-Sub DeleteCityBlock(ByVal cityName As String)
+Sub KeepOnlySelectedCities()
     Dim ws As Worksheet
     Dim lastRow As Long, r As Long
     Dim startRow As Long, endRow As Long
     Dim headerColor As Long
+    Dim cityList As Variant
     
-    Set ws = ThisWorkbook.Worksheets("Werbung") ' <-- при необходимости поменяй имя листа
+    ' список городов, которые нужно оставить
+    cityList = Array("Berlin", "München")
+    
+    Set ws = ThisWorkbook.Worksheets("Werbung")
     lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
     
-    ' 1) Найдём строку города и запомним цвет заливки заголовков
-    startRow = 0
+    ' цвет заголовков
     For r = 1 To lastRow
-        If Trim$(LCase$(ws.Cells(r, "A").Value)) = LCase$(cityName) Then
-            startRow = r
-            headerColor = ws.Cells(r, "A").Interior.Color
+        If Len(Trim$(ws.Cells(r, 1).Value)) > 0 Then
+            headerColor = ws.Cells(r, 1).Interior.Color
             Exit For
         End If
     Next r
-    If startRow = 0 Then
-        MsgBox "Город """ & cityName & """ не найден.", vbExclamation
-        Exit Sub
-    End If
     
     Application.ScreenUpdating = False
     
-    ' 2) Ищем следующий заголовок-город с тем же цветом
-    endRow = lastRow + 1 ' если следующий заголовок не найдётся — удалим до конца таблицы
-    For r = startRow + 1 To lastRow
-        If Len(Trim$(ws.Cells(r, "A").Value)) > 0 Then
-            ' строка с заголовком города обычно имеет тот же цвет заливки
-            If ws.Cells(r, "A").Interior.Color = headerColor Then
-                endRow = r
-                Exit For
+    ' идём снизу вверх
+    For r = lastRow To 1 Step -1
+        If ws.Cells(r, 1).Interior.Color = headerColor Then
+            startRow = r
+            endRow = lastRow + 1
+            Dim rr As Long
+            For rr = r + 1 To lastRow
+                If ws.Cells(rr, 1).Interior.Color = headerColor Then
+                    endRow = rr
+                    Exit For
+                End If
+            Next rr
+            ' если города нет в списке → удаляем
+            If Not IsInArray(Trim$(ws.Cells(r, 1).Value), cityList) Then
+                ws.Rows(startRow & ":" & endRow - 1).Delete
+                lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
             End If
         End If
     Next r
     
-    ' 3) Удаляем весь блок (город + его позиции)
-    ws.Rows(startRow & ":" & endRow - 1).Delete
-    
     Application.ScreenUpdating = True
-End Sub
-
-' Пример вызова:
-Sub Beispiel()
-    DeleteCityBlock "Erharting"
 End Sub
