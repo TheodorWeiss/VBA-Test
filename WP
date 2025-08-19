@@ -1,29 +1,60 @@
 Option Explicit
 
-' === ЗАПУСК ОТСЮДА ===
-Public Sub Run_KeepOnlySelectedCities()
-    ' Укажи города, которые НУЖНО ОСТАВИТЬ (whitelist).
-    Dim whitelist As Variant
-    whitelist = Array("Berlin", "München")  ' <--- ПОМЕНЯЙ под себя
+' === ENTRY POINT ===
+Public Sub Run_ReorderCityBlocks()
+    ' --- CONFIG ---
+    Dim wsName As String: wsName = "Werbung"              ' source sheet name
+    Dim outName As String: outName = "Werbung_Reordered"  ' output sheet name (will be created/overwritten)
 
-    ' Имя листа с данными
-    KeepOnlySelectedCities wsName:="Werbung", whitelist:=whitelist, detectBold:=True, detectColor:=False
+    ' Detection of city headers in column A:
+    ' Set one or both to True (at least one must be True).
+    Dim detectBold As Boolean: detectBold = True
+    Dim detectColor As Boolean: detectColor = False
+
+    ' If detectColor=True, the macro will infer the header color from the first detected header.
+    ' If your headers have a uniform dark fill, set detectColor=True (and detectBold=False if not bold).
+
+    ' --- Desired order of cities (edit this list) ---
+    Dim desiredOrder As Variant
+    desiredOrder = Array("Berlin", "München", "Erharting")  ' <--- put your target order here
+
+    ' Append any cities not listed above to the end?
+    Dim appendUnlisted As Boolean: appendUnlisted = True
+
+    ' Run
+    ReorderCityBlocks wsName, outName, desiredOrder, detectBold, detectColor, appendUnlisted
 End Sub
 
-' --- ОСНОВНАЯ ЛОГИКА ---
-Private Sub KeepOnlySelectedCities(wsName As String, whitelist As Variant, _
-                                   detectBold As Boolean, detectColor As Boolean)
 
-    Dim ws As Worksheet: Set ws = ThisWorkbook.Worksheets(wsName)
+' === CORE LOGIC ===
+Private Sub ReorderCityBlocks( _
+    ByVal wsName As String, _
+    ByVal outName As String, _
+    ByVal desiredOrder As Variant, _
+    ByVal detectBold As Boolean, _
+    ByVal detectColor As Boolean, _
+    ByVal appendUnlisted As Boolean)
+
+    Dim wb As Workbook: Set wb = ThisWorkbook
+    Dim ws As Worksheet: Set ws = wb.Worksheets(wsName)
     Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
-    Dim headers As Collection: Set headers = New Collection
-    Dim r As Long, headerColor As Long, haveColor As Boolean
 
-    ' Если нужна детекция по цвету — определим цвет (из первого подходящего заголовка)
+    If Not detectBold And Not detectColor Then
+        MsgBox "Enable at least one header detector: detectBold or detectColor.", vbExclamation
+        Exit Sub
+    End If
+
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    On Error GoTo CleanUp
+
+    ' Infer header color if requested
+    Dim headerColor As Long, haveColor As Boolean
+    Dim r As Long
     If detectColor Then
         For r = 1 To lastRow
             If Len(Trim$(ws.Cells(r, 1).Value)) > 0 Then
-                If detectBold And ws.Cells(r, 1).Font.Bold Then
+                If (detectBold And ws.Cells(r, 1).Font.Bold) Or (Not detectBold) Then
                     headerColor = ws.Cells(r, 1).Interior.Color
                     haveColor = True
                     Exit For
@@ -31,61 +62,117 @@ Private Sub KeepOnlySelectedCities(wsName As String, whitelist As Variant, _
             End If
         Next r
         If Not haveColor Then
-            For r = 1 To lastRow
-                If Len(Trim$(ws.Cells(r, 1).Value)) > 0 Then
-                    headerColor = ws.Cells(r, 1).Interior.Color
-                    haveColor = True
-                    Exit For
-                End If
-            Next r
+            MsgBox "Could not infer header color. Check detect settings.", vbExclamation
+            GoTo CleanUp
         End If
     End If
 
-    ' Собираем строки-заголовки (города) в колонке A
+    ' Collect all header rows (start rows of each city block)
+    Dim headerRows As Collection: Set headerRows = New Collection
     For r = 1 To lastRow
         If Len(Trim$(ws.Cells(r, 1).Value)) > 0 Then
             If (detectBold And ws.Cells(r, 1).Font.Bold) _
                Or (detectColor And ws.Cells(r, 1).Interior.Color = headerColor) Then
-                headers.Add r
+                headerRows.Add r
             End If
         End If
     Next r
 
-    If headers.Count = 0 Then
-        MsgBox "Не найдены строки-заголовки городов. Проверь признак (жирный/цвет).", vbExclamation
-        Exit Sub
+    If headerRows.Count = 0 Then
+        MsgBox "No city headers detected. Adjust detection rules.", vbExclamation
+        GoTo CleanUp
     End If
 
-    ' Сентинел — "конец" для последнего блока
-    headers.Add lastRow + 1
+    ' Append sentinel for end
+    headerRows.Add lastRow + 1
 
-    Application.ScreenUpdating = False
-    Application.Calculation = xlCalculationManual
-    On Error GoTo CleanUp
+    ' Build a list of blocks: CityName, StartRow, EndRowExclusive
+    Dim n As Long: n = headerRows.Count - 1
+    Dim i As Long
+    Dim blocks() As Variant
+    ReDim blocks(1 To n, 1 To 3) ' [i,1]=city, [i,2]=startRow, [i,3]=endRowExclusive
 
-    Dim i As Long, startRow As Long, endRow As Long, city As String
-    ' Удаляем блоки снизу вверх, чтобы не сдвигать индексы
-    For i = headers.Count - 1 To 1 Step -1
-        startRow = headers(i)
-        endRow = headers(i + 1)
-        city = Trim$(CStr(ws.Cells(startRow, 1).Value))
-        If Not IsInArray(city, whitelist) Then
-            ws.Rows(startRow & ":" & endRow - 1).Delete
-        End If
+    For i = 1 To n
+        Dim sRow As Long, eRow As Long
+        sRow = headerRows(i)
+        eRow = headerRows(i + 1)
+        blocks(i, 1) = Trim$(CStr(ws.Cells(sRow, 1).Value))
+        blocks(i, 2) = sRow
+        blocks(i, 3) = eRow
     Next i
+
+    ' Prepare output sheet (create or clear)
+    Dim outWs As Worksheet
+    On Error Resume Next
+    Set outWs = wb.Worksheets(outName)
+    On Error GoTo 0
+    If Not outWs Is Nothing Then
+        outWs.Cells.Clear
+    Else
+        Set outWs = wb.Worksheets.Add(After:=ws)
+        outWs.Name = outName
+    End If
+
+    ' Copy rows in desired order
+    Dim dstRow As Long: dstRow = 1
+    Dim used() As Boolean
+    ReDim used(1 To n)
+
+    ' Helper dictionary for quick lookup (case-insensitive)
+    Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
+    dict.CompareMode = 1 ' vbTextCompare
+
+    ' Some city names might repeat or contain extra spaces; we still keep all blocks.
+    ' We won't index by name -> single block, instead we will linearly search below.
+
+    ' First: copy blocks whose city is in desiredOrder
+    Dim ord As Variant
+    For Each ord In desiredOrder
+        Dim wanted As String: wanted = Trim$(CStr(ord))
+        ' Copy ALL blocks for this city name (in case of duplicates)
+        For i = 1 To n
+            If Not used(i) Then
+                If StrComp(Trim$(CStr(blocks(i, 1))), wanted, vbTextCompare) = 0 Then
+                    CopyBlockRows ws, outWs, CLng(blocks(i, 2)), CLng(blocks(i, 3)) - 1, dstRow
+                    used(i) = True
+                    dstRow = outWs.Cells(outWs.Rows.Count, "A").End(xlUp).Row + 1
+                End If
+            End If
+        Next i
+    Next ord
+
+    ' Then: optionally append blocks not listed in desiredOrder
+    If appendUnlisted Then
+        For i = 1 To n
+            If Not used(i) Then
+                CopyBlockRows ws, outWs, CLng(blocks(i, 2)), CLng(blocks(i, 3)) - 1, dstRow
+                used(i) = True
+                dstRow = outWs.Cells(outWs.Rows.Count, "A").End(xlUp).Row + 1
+            End If
+        Next i
+    End If
+
+    ' Optional: auto-fit columns
+    outWs.Columns.AutoFit
+
+    MsgBox "Reordering completed to sheet '" & outName & "'.", vbInformation
 
 CleanUp:
     Application.Calculation = xlCalculationAutomatic
     Application.ScreenUpdating = True
 End Sub
 
-' --- ХЕЛПЕР ---
-Private Function IsInArray(ByVal val As String, ByVal arr As Variant) As Boolean
-    Dim v As Variant
-    For Each v In arr
-        If StrComp(val, CStr(v), vbTextCompare) = 0 Then
-            IsInArray = True
-            Exit Function
-        End If
-    Next v
-End Function
+
+' === HELPER: Copy a continuous block of rows to destination sheet, preserving formats ===
+Private Sub CopyBlockRows(ByVal srcWs As Worksheet, ByVal dstWs As Worksheet, _
+                          ByVal srcStart As Long, ByVal srcEnd As Long, ByVal dstStart As Long)
+    ' Copies rows [srcStart .. srcEnd] to dstStart (overwriting destination rows if necessary).
+    ' Keeps values, formats, column widths are controlled by dstWs.
+    Dim rowCount As Long: rowCount = srcEnd - srcStart + 1
+    If rowCount <= 0 Then Exit Sub
+
+    dstWs.Rows(dstStart).Resize(rowCount).EntireRow.RowHeight = srcWs.Rows(srcStart).RowHeight
+    srcWs.Rows(srcStart & ":" & srcEnd).Copy
+    dstWs.Rows(dstStart).PasteSpecial xlPasteAll
+    Application.CutCopyMode = False
+End Sub
