@@ -1,45 +1,91 @@
-Sub KeepOnlySelectedCities()
-    Dim ws As Worksheet
-    Dim lastRow As Long, r As Long
-    Dim startRow As Long, endRow As Long
-    Dim headerColor As Long
-    Dim cityList As Variant
-    
-    ' список городов, которые нужно оставить
-    cityList = Array("Berlin", "München")
-    
-    Set ws = ThisWorkbook.Worksheets("Werbung")
-    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
-    
-    ' цвет заголовков
-    For r = 1 To lastRow
-        If Len(Trim$(ws.Cells(r, 1).Value)) > 0 Then
-            headerColor = ws.Cells(r, 1).Interior.Color
-            Exit For
-        End If
-    Next r
-    
-    Application.ScreenUpdating = False
-    
-    ' идём снизу вверх
-    For r = lastRow To 1 Step -1
-        If ws.Cells(r, 1).Interior.Color = headerColor Then
-            startRow = r
-            endRow = lastRow + 1
-            Dim rr As Long
-            For rr = r + 1 To lastRow
-                If ws.Cells(rr, 1).Interior.Color = headerColor Then
-                    endRow = rr
+Option Explicit
+
+' === ЗАПУСК ОТСЮДА ===
+Public Sub Run_KeepOnlySelectedCities()
+    ' Укажи города, которые НУЖНО ОСТАВИТЬ (whitelist).
+    Dim whitelist As Variant
+    whitelist = Array("Berlin", "München")  ' <--- ПОМЕНЯЙ под себя
+
+    ' Имя листа с данными
+    KeepOnlySelectedCities wsName:="Werbung", whitelist:=whitelist, detectBold:=True, detectColor:=False
+End Sub
+
+' --- ОСНОВНАЯ ЛОГИКА ---
+Private Sub KeepOnlySelectedCities(wsName As String, whitelist As Variant, _
+                                   detectBold As Boolean, detectColor As Boolean)
+
+    Dim ws As Worksheet: Set ws = ThisWorkbook.Worksheets(wsName)
+    Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    Dim headers As Collection: Set headers = New Collection
+    Dim r As Long, headerColor As Long, haveColor As Boolean
+
+    ' Если нужна детекция по цвету — определим цвет (из первого подходящего заголовка)
+    If detectColor Then
+        For r = 1 To lastRow
+            If Len(Trim$(ws.Cells(r, 1).Value)) > 0 Then
+                If detectBold And ws.Cells(r, 1).Font.Bold Then
+                    headerColor = ws.Cells(r, 1).Interior.Color
+                    haveColor = True
                     Exit For
                 End If
-            Next rr
-            ' если города нет в списке → удаляем
-            If Not IsInArray(Trim$(ws.Cells(r, 1).Value), cityList) Then
-                ws.Rows(startRow & ":" & endRow - 1).Delete
-                lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+            End If
+        Next r
+        If Not haveColor Then
+            For r = 1 To lastRow
+                If Len(Trim$(ws.Cells(r, 1).Value)) > 0 Then
+                    headerColor = ws.Cells(r, 1).Interior.Color
+                    haveColor = True
+                    Exit For
+                End If
+            Next r
+        End If
+    End If
+
+    ' Собираем строки-заголовки (города) в колонке A
+    For r = 1 To lastRow
+        If Len(Trim$(ws.Cells(r, 1).Value)) > 0 Then
+            If (detectBold And ws.Cells(r, 1).Font.Bold) _
+               Or (detectColor And ws.Cells(r, 1).Interior.Color = headerColor) Then
+                headers.Add r
             End If
         End If
     Next r
-    
+
+    If headers.Count = 0 Then
+        MsgBox "Не найдены строки-заголовки городов. Проверь признак (жирный/цвет).", vbExclamation
+        Exit Sub
+    End If
+
+    ' Сентинел — "конец" для последнего блока
+    headers.Add lastRow + 1
+
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    On Error GoTo CleanUp
+
+    Dim i As Long, startRow As Long, endRow As Long, city As String
+    ' Удаляем блоки снизу вверх, чтобы не сдвигать индексы
+    For i = headers.Count - 1 To 1 Step -1
+        startRow = headers(i)
+        endRow = headers(i + 1)
+        city = Trim$(CStr(ws.Cells(startRow, 1).Value))
+        If Not IsInArray(city, whitelist) Then
+            ws.Rows(startRow & ":" & endRow - 1).Delete
+        End If
+    Next i
+
+CleanUp:
+    Application.Calculation = xlCalculationAutomatic
     Application.ScreenUpdating = True
 End Sub
+
+' --- ХЕЛПЕР ---
+Private Function IsInArray(ByVal val As String, ByVal arr As Variant) As Boolean
+    Dim v As Variant
+    For Each v In arr
+        If StrComp(val, CStr(v), vbTextCompare) = 0 Then
+            IsInArray = True
+            Exit Function
+        End If
+    Next v
+End Function
