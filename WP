@@ -1,0 +1,49 @@
+Option Explicit
+
+Sub DeleteCityBlock(ByVal cityName As String)
+    Dim ws As Worksheet
+    Dim lastRow As Long, r As Long
+    Dim startRow As Long, endRow As Long
+    Dim headerColor As Long
+    
+    Set ws = ThisWorkbook.Worksheets("Werbung") ' <-- при необходимости поменяй имя листа
+    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    
+    ' 1) Найдём строку города и запомним цвет заливки заголовков
+    startRow = 0
+    For r = 1 To lastRow
+        If Trim$(LCase$(ws.Cells(r, "A").Value)) = LCase$(cityName) Then
+            startRow = r
+            headerColor = ws.Cells(r, "A").Interior.Color
+            Exit For
+        End If
+    Next r
+    If startRow = 0 Then
+        MsgBox "Город """ & cityName & """ не найден.", vbExclamation
+        Exit Sub
+    End If
+    
+    Application.ScreenUpdating = False
+    
+    ' 2) Ищем следующий заголовок-город с тем же цветом
+    endRow = lastRow + 1 ' если следующий заголовок не найдётся — удалим до конца таблицы
+    For r = startRow + 1 To lastRow
+        If Len(Trim$(ws.Cells(r, "A").Value)) > 0 Then
+            ' строка с заголовком города обычно имеет тот же цвет заливки
+            If ws.Cells(r, "A").Interior.Color = headerColor Then
+                endRow = r
+                Exit For
+            End If
+        End If
+    Next r
+    
+    ' 3) Удаляем весь блок (город + его позиции)
+    ws.Rows(startRow & ":" & endRow - 1).Delete
+    
+    Application.ScreenUpdating = True
+End Sub
+
+' Пример вызова:
+Sub Beispiel()
+    DeleteCityBlock "Erharting"
+End Sub
