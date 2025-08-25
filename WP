@@ -1,50 +1,146 @@
 Option Explicit
 
-Public Sub ShadeByFirstWord()
-    Const SHEET_NAME As String = "Werbung_Reordered"
-    Const START_ROW As Long = 3        ' первая строка для заливки
-    Const FIRST_COL As Long = 1        ' A
-    Const LAST_COL As Long = 9         ' I
-    Const GRAY_INDEX As Long = 15      ' стандартный светло-серый (ColorIndex)
+Public Sub ShadeAndFillFromWerbung()
+    Const SHT_MAIN As String = "Werbung_Reordered" ' куда красим и вставляем
+    Const SHT_SRC  As String = "Werbung"           ' откуда берём данные
+    Const START_ROW As Long = 3                    ' первая серая строка
+    Const FIRST_COL As Long = 1                    ' A
+    Const LAST_COL  As Long = 9                    ' I
+    Const GRAY_INDEX As Long = 15                  ' стандартный светло-серый
 
-    Dim ws As Worksheet
-    Set ws = ThisWorkbook.Worksheets(SHEET_NAME)
+    Dim ws As Worksheet, wsrc As Worksheet
+    Set ws = ThisWorkbook.Worksheets(SHT_MAIN)
+    Set wsrc = ThisWorkbook.Worksheets(SHT_SRC)
 
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
 
-    Dim lastRow As Long
-    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
     If lastRow < START_ROW Then GoTo TidyExit
 
-    ' 1) Закрасить строку 3
-    ws.Range(ws.Cells(START_ROW, FIRST_COL), ws.Cells(START_ROW, LAST_COL)).Interior.ColorIndex = GRAY_INDEX
+    ' 1) Соберём номера «серых» строк: строка 3 + смены первого слова в столбце B
+    Dim grayRows As Collection
+    Set grayRows = New Collection
 
-    ' 2) Идём дальше: красим, когда меняется первое слово в B
-    Dim r As Long
-    Dim prevFirst As String, curFirst As String
+    ' всегда красим строку 3
+    grayRows.Add START_ROW
 
+    Dim r As Long, prevFirst As String, curFirst As String
     prevFirst = FirstWord(CStr(ws.Cells(START_ROW, "B").Value))
 
     For r = START_ROW + 1 To lastRow
         curFirst = FirstWord(CStr(ws.Cells(r, "B").Value))
         If StrComp(curFirst, prevFirst, vbTextCompare) <> 0 Then
-            ws.Range(ws.Cells(r, FIRST_COL), ws.Cells(r, LAST_COL)).Interior.ColorIndex = GRAY_INDEX
+            grayRows.Add r
         End If
         prevFirst = curFirst
     Next r
+
+    ' Сначала очистим заливку A:I (чтобы был «чистый» результат)
+    ws.Range(ws.Cells(START_ROW, FIRST_COL), ws.Cells(lastRow, LAST_COL)).Interior.Pattern = xlNone
+
+    ' Покрасим собранные строки
+    Dim i As Long
+    For i = 1 To grayRows.Count
+        r = CLng(grayRows(i))
+        ws.Range(ws.Cells(r, FIRST_COL), ws.Cells(r, LAST_COL)).Interior.ColorIndex = GRAY_INDEX
+    Next i
+
+    ' 2) Подготовим источник: найдём блок города на листе Werbung
+    Dim city As String
+    city = Trim$(CStr(ws.Range("B1").Value))
+    If Len(city) = 0 Then
+        MsgBox "В ячейке B1 не указан город.", vbExclamation
+        GoTo TidyExit
+    End If
+
+    Dim srcStart As Long, srcEnd As Long
+    srcStart = FindCityHeaderOnWerbung(wsrc, city)
+    If srcStart = 0 Then
+        MsgBox "Город '" & city & "' не найден на листе '" & SHT_SRC & "'.", vbExclamation
+        GoTo TidyExit
+    End If
+    srcEnd = FindNextCityHeaderBelowWerbung(wsrc, srcStart + 1)
+    If srcEnd = 0 Then srcEnd = wsrc.Cells(wsrc.Rows.Count, "A").End(xlUp).Row + 1 ' до конца листа
+
+    ' Соберём данные A,C,E из блока города на Werbung последовательно
+    Dim srcData As Collection
+    Set srcData = New Collection
+
+    Dim rr As Long, rec As Variant
+    For rr = srcStart + 1 To srcEnd - 1
+        ' пропускаем пустые строки
+        If HasAnyValue(wsrc, rr, Array("A", "C", "E")) Then
+            rec = Array( _
+                wsrc.Cells(rr, "A").Value, _  ' -> A
+                wsrc.Cells(rr, "C").Value, _  ' -> G
+                wsrc.Cells(rr, "E").Value)    ' -> H
+            srcData.Add rec
+        End If
+    Next rr
+
+    ' 3) Переносим: по порядку серых строк ↔ по порядку строк из блока города
+    Dim n As Long: n = Application.WorksheetFunction.Min(grayRows.Count, srcData.Count)
+    If n = 0 Then GoTo TidyExit
+
+    For i = 1 To n
+        r = CLng(grayRows(i))
+        rec = srcData(i - 1) ' массив 0..2
+        ws.Cells(r, "A").Value = rec(0)  ' из A (Werbung)
+        ws.Cells(r, "G").Value = rec(1)  ' из C (Werbung)
+        ws.Cells(r, "H").Value = rec(2)  ' из E (Werbung)
+    Next i
 
 TidyExit:
     Application.Calculation = xlCalculationAutomatic
     Application.ScreenUpdating = True
 End Sub
 
+' ===== Helpers =====
+
 Private Function FirstWord(ByVal s As String) As String
-    ' Возвращает первое слово (до первого пробела) из строки s
     s = Trim$(s)
     If Len(s) = 0 Then
         FirstWord = ""
     Else
         FirstWord = Split(s, " ")(0)
     End If
+End Function
+
+Private Function FindCityHeaderOnWerbung(ByVal ws As Worksheet, ByVal city As String) As Long
+    ' Ищем строку на листе Werbung, где в колонке A стоит название города.
+    ' Обычно она серая, но полагаемся прежде всего на текст.
+    Dim last As Long, r As Long
+    last = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    For r = 1 To last
+        If StrComp(Trim$(CStr(ws.Cells(r, "A").Value)), city, vbTextCompare) = 0 Then
+            FindCityHeaderOnWerbung = r
+            Exit Function
+        End If
+    Next r
+End Function
+
+Private Function FindNextCityHeaderBelowWerbung(ByVal ws As Worksheet, ByVal startRow As Long) As Long
+    ' Поищем следующую «шапку города»: ячейка A не пустая и (как правило) с заливкой/жирным
+    Dim last As Long, r As Long
+    last = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    For r = startRow To last
+        If Len(Trim$(CStr(ws.Cells(r, "A").Value))) > 0 Then
+            ' если хотите, можно усилить критерий: проверять серую заливку или жирный
+            If ws.Cells(r, "B").Value = "" And ws.Cells(r, "A").Font.Bold Then
+                FindNextCityHeaderBelowWerbung = r
+                Exit Function
+            End If
+        End If
+    Next r
+End Function
+
+Private Function HasAnyValue(ws As Worksheet, ByVal rowNum As Long, cols As Variant) As Boolean
+    Dim i As Long
+    For i = LBound(cols) To UBound(cols)
+        If Len(Trim$(CStr(ws.Cells(rowNum, CStr(cols(i))).Value))) > 0 Then
+            HasAnyValue = True
+            Exit Function
+        End If
+    Next i
 End Function
