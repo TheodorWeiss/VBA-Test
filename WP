@@ -1,71 +1,60 @@
 Option Explicit
 
 Public Sub HighlightMatchesAgainstPonholz()
-    ' === Settings ===
     Const SHEET_NAME As String = "Werbung_Reordered"
     Const BASE_CITY As String = "Ponholz"
-    
+
     Dim ws As Worksheet
     Set ws = ThisWorkbook.Worksheets(SHEET_NAME)
-    
+
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
-    
-    Dim lastRow As Long
-    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
-    
-    ' Locate the header-row of the base city (Ponholz)
-    Dim baseStart As Long, baseEnd As Long
-    baseStart = FindCityHeaderRow(ws, BASE_CITY, lastRow)
-    If baseStart = 0 Then
-        MsgBox "City '" & BASE_CITY & "' was not found in column A.", vbExclamation
+    On Error GoTo TidyExit
+
+    Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+
+    '--- Найдём блок Ponholz
+    Dim baseHeader As Long: baseHeader = FindCityHeaderRow(ws, BASE_CITY, lastRow)
+    If baseHeader = 0 Then
+        MsgBox "Город '" & BASE_CITY & "' не найден в колонке A.", vbExclamation
         GoTo TidyExit
     End If
-    
-    ' Find the end of the base city block (next city header or lastRow+1)
-    baseEnd = FindNextCityHeaderBelow(ws, baseStart + 1, lastRow)
-    If baseEnd = 0 Then baseEnd = lastRow + 1  ' if Ponholz is the last block
-    
-    ' Build a dictionary: category -> set of article IDs from Ponholz
-    Dim baseDict As Object ' Scripting.Dictionary
-    Set baseDict = CreateObject("Scripting.Dictionary")
-    
-    Dim r As Long, cat As String, ids As Variant, i As Long
-    For r = baseStart + 1 To baseEnd - 1
+    Dim baseEnd As Long: baseEnd = FindNextCityHeaderBelow(ws, baseHeader + 1, lastRow)
+    If baseEnd = 0 Then baseEnd = lastRow + 1     ' Ponholz последний город
+
+    '--- Собираем словарь: категория -> набор артикулов
+    Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
+    Dim r As Long, cat As String, arr, i As Long
+    For r = baseHeader + 1 To baseEnd - 1
         If Not IsCityHeader(ws, r) Then
             cat = Trim(CStr(ws.Cells(r, "A").Value))
             If Len(cat) > 0 Then
-                ids = SplitClean(CStr(ws.Cells(r, "B").Value), ",")
-                If Not baseDict.Exists(cat) Then baseDict.Add cat, CreateObject("Scripting.Dictionary")
-                For i = LBound(ids) To UBound(ids)
-                    If Len(ids(i)) > 0 Then
-                        baseDict(cat)(ids(i)) = True
-                    End If
-                Next i
+                If Not dict.Exists(cat) Then dict.Add cat, CreateObject("Scripting.Dictionary")
+                arr = Split(CStr(ws.Cells(r, "B").Value), ",")
+                For i = LBound(arr) To UBound(arr)
+                    Dim id As String: id = Trim$(CStr(arr(i)))
+                    If Len(id) > 0 Then dict(cat)(id) = True
+                Next
             End If
         End If
     Next r
-    
-    ' Walk through the rest of the sheet and bold matching IDs per category
-    Dim curCityStart As Long
-    curCityStart = baseEnd   ' we start scanning below Ponholz
-    Do While curCityStart <= lastRow
-        Dim nextCityStart As Long
-        nextCityStart = FindNextCityHeaderBelow(ws, curCityStart, lastRow)
-        If nextCityStart = 0 Then nextCityStart = lastRow + 1
-        
-        ' Process rows inside this city block
-        For r = curCityStart To nextCityStart - 1
+
+    '--- Проходим по остальным городам
+    Dim curCityHeader As Long: curCityHeader = baseEnd          ' стоим на заголовке СЛЕДУЮЩЕГО города
+    Do While curCityHeader <= lastRow
+        Dim nextHeader As Long: nextHeader = FindNextCityHeaderBelow(ws, curCityHeader + 1, lastRow)
+        If nextHeader = 0 Then nextHeader = lastRow + 1         ' последний блок
+
+        For r = curCityHeader + 1 To nextHeader - 1             ' строки внутри города
             If Not IsCityHeader(ws, r) Then
-                cat = Trim(CStr(ws.Cells(r, "A").Value))
-                If Len(cat) > 0 And baseDict.Exists(cat) Then
-                    ' Bold only those tokens (article IDs) that exist in baseDict(cat)
-                    BoldMatchingTokensInCell ws.Cells(r, "B"), baseDict(cat)
+                cat = Trim$(CStr(ws.Cells(r, "A").Value))
+                If Len(cat) > 0 And dict.Exists(cat) Then
+                    BoldMatchesInCell ws.Cells(r, "B"), dict(cat)
                 End If
             End If
         Next r
-        
-        curCityStart = nextCityStart
+
+        curCityHeader = nextHeader                              ' ПЕРЕХОД к следующему городу
     Loop
 
 TidyExit:
@@ -73,25 +62,21 @@ TidyExit:
     Application.ScreenUpdating = True
 End Sub
 
-' === Helpers ===
+'----------------- ВСПОМОГАТЕЛЬНЫЕ -----------------
 
 Private Function FindCityHeaderRow(ws As Worksheet, cityName As String, lastRow As Long) As Long
-    ' Find a row where column A equals the city name (case-insensitive), bold, and column B is empty
-    Dim r As Long, v As String
+    Dim r As Long
     For r = 1 To lastRow
-        v = CStr(ws.Cells(r, "A").Value)
-        If StrComp(Trim(v), cityName, vbTextCompare) = 0 Then
+        If StrComp(Trim$(CStr(ws.Cells(r, "A").Value)), cityName, vbTextCompare) = 0 Then
             If IsCityHeader(ws, r) Then
                 FindCityHeaderRow = r
                 Exit Function
             End If
         End If
     Next r
-    FindCityHeaderRow = 0
 End Function
 
 Private Function FindNextCityHeaderBelow(ws As Worksheet, startRow As Long, lastRow As Long) As Long
-    ' Find the next row below startRow that looks like a city header
     Dim r As Long
     For r = startRow To lastRow
         If IsCityHeader(ws, r) Then
@@ -99,79 +84,39 @@ Private Function FindNextCityHeaderBelow(ws As Worksheet, startRow As Long, last
             Exit Function
         End If
     Next r
-    FindNextCityHeaderBelow = 0
 End Function
 
 Private Function IsCityHeader(ws As Worksheet, r As Long) As Boolean
-    ' Heuristic for city header:
-    ' - Column A is not empty
-    ' - Column B is empty
-    ' - Column A is bold (as in your layout: grey + bold city name)
-    Dim hasA As Boolean, emptyB As Boolean, isBold As Boolean
-    hasA = Len(Trim(CStr(ws.Cells(r, "A").Value))) > 0
-    emptyB = Len(Trim(CStr(ws.Cells(r, "B").Value))) = 0
-    isBold = ws.Cells(r, "A").Font.Bold
-    IsCityHeader = (hasA And emptyB And isBold)
+    ' Город: A не пусто, B пусто, A жирный (как на твоём скрине)
+    IsCityHeader = (Len(Trim$(CStr(ws.Cells(r, "A").Value))) > 0) _
+                   And (Len(Trim$(CStr(ws.Cells(r, "B").Value))) = 0) _
+                   And ws.Cells(r, "A").Font.Bold
 End Function
 
-Private Function SplitClean(ByVal s As String, ByVal sep As String) As Variant
-    ' Split by separator and trim spaces around tokens
-    Dim raw As Variant, i As Long
-    s = Replace(s, vbLf, " ")
-    s = Replace(s, vbCr, " ")
-    raw = Split(s, sep)
-    For i = LBound(raw) To UBound(raw)
-        raw(i) = Trim(CStr(raw(i)))
-    Next i
-    SplitClean = raw
-End Function
+Private Sub BoldMatchesInCell(ByVal cell As Range, ByVal setIds As Object)
+    Dim txt As String: txt = CStr(cell.Value)
+    If Len(Trim$(txt)) = 0 Then Exit Sub
 
-Private Sub BoldMatchingTokensInCell(ByVal tgt As Range, ByVal matchSet As Object)
-    ' Bold only those comma-separated tokens in tgt that exist in matchSet (dictionary)
-    ' We preserve the original text, only modifying font style per token.
-    Dim text As String
-    text = CStr(tgt.Value)
-    If Len(Trim(text)) = 0 Then Exit Sub
-    
-    ' Normalize separators: we will parse by comma, but keep exact positions for bolding
-    Dim tokens As Variant
-    tokens = Split(text, ",")
-    
+    Dim parts As Variant: parts = Split(txt, ",")
     Dim pos As Long: pos = 1
-    Dim i As Long, token As String, tokenTrim As String, startPos As Long, tokenLen As Long
-    
-    ' First, reset bold to False for the entire cell (so we can re-apply only matches)
-    With tgt.Characters(1, Len(text)).Font
-        .Bold = False
-    End With
-    
-    For i = LBound(tokens) To UBound(tokens)
-        token = CStr(tokens(i))
-        ' token includes leading space if present; record its true start position
-        startPos = pos
-        
-        ' actual text length for this token including any leading spaces
-        tokenLen = Len(token)
-        
-        ' the clean token to compare (trimmed)
-        tokenTrim = Trim(token)
-        
-        If Len(tokenTrim) > 0 Then
-            If matchSet.Exists(tokenTrim) Then
-                ' find the start of the trimmed part within token (skip leading spaces)
-                Dim leadingSpaces As Long
-                leadingSpaces = InStr(1, token, tokenTrim, vbBinaryCompare) - 1
-                If leadingSpaces < 0 Then leadingSpaces = 0
-                ' Bold only the trimmed numeric token (not the spaces)
-                tgt.Characters(startPos + leadingSpaces, Len(tokenTrim)).Font.Bold = True
+    Dim i As Long
+
+    ' НЕ сбрасываем жирный для всей ячейки, чтобы быстрее работать;
+    ' просто делаем жирными совпадающие «числа».
+    For i = LBound(parts) To UBound(parts)
+        Dim token As String: token = CStr(parts(i))
+        Dim clean As String: clean = Trim$(token)
+        If Len(clean) > 0 Then
+            If setIds.Exists(clean) Then
+                ' найдём позицию «чистой» части внутри токена (после пробелов)
+                Dim p As Long: p = InStr(1, token, clean, vbBinaryCompare)
+                If p = 0 Then p = 1
+                cell.Characters(Start:=pos + p - 1, Length:=Len(clean)).Font.Bold = True
             End If
         End If
-        
-        ' advance position: token + comma (except after the last token)
-        pos = pos + tokenLen
-        If i < UBound(tokens) Then
-            ' account for the comma itself
-            pos = pos + 1
-        End If
+
+        ' смещаем указатель: длина токена + запятая (кроме последнего)
+        pos = pos + Len(token)
+        If i < UBound(parts) Then pos = pos + 1
     Next i
 End Sub
