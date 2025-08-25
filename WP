@@ -1,12 +1,12 @@
 Option Explicit
 
-Public Sub ShadeAndFillFromWerbung()
-    Const SHT_MAIN As String = "Werbung_Reordered" ' куда красим и вставляем
-    Const SHT_SRC  As String = "Werbung"           ' откуда берём данные
+Public Sub ShadeAndFill_FromWerbung_OneSheet()
+    Const SHT_MAIN As String = "Werbung_Reordered" ' работаем с ОДНИМ листом
+    Const SHT_SRC  As String = "Werbung"           ' источник
     Const START_ROW As Long = 3                    ' первая серая строка
     Const FIRST_COL As Long = 1                    ' A
     Const LAST_COL  As Long = 9                    ' I
-    Const GRAY_INDEX As Long = 15                  ' стандартный светло-серый
+    Const GRAY_INDEX As Long = 15                  ' светло-серый (ColorIndex)
 
     Dim ws As Worksheet, wsrc As Worksheet
     Set ws = ThisWorkbook.Worksheets(SHT_MAIN)
@@ -15,15 +15,13 @@ Public Sub ShadeAndFillFromWerbung()
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
 
-    Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
     If lastRow < START_ROW Then GoTo TidyExit
 
-    ' 1) Соберём номера «серых» строк: строка 3 + смены первого слова в столбце B
-    Dim grayRows As Collection
-    Set grayRows = New Collection
-
-    ' всегда красим строку 3
-    grayRows.Add START_ROW
+    ' -------- 1) Собираем номера «серых» строк --------
+    Dim grayRows As Collection: Set grayRows = New Collection
+    grayRows.Add START_ROW ' строка 3 всегда серая
 
     Dim r As Long, prevFirst As String, curFirst As String
     prevFirst = FirstWord(CStr(ws.Cells(START_ROW, "B").Value))
@@ -36,19 +34,17 @@ Public Sub ShadeAndFillFromWerbung()
         prevFirst = curFirst
     Next r
 
-    ' Сначала очистим заливку A:I (чтобы был «чистый» результат)
+    ' очистим заливку A:I и прокрасим нужные строки
     ws.Range(ws.Cells(START_ROW, FIRST_COL), ws.Cells(lastRow, LAST_COL)).Interior.Pattern = xlNone
 
-    ' Покрасим собранные строки
     Dim i As Long
     For i = 1 To grayRows.Count
         r = CLng(grayRows(i))
         ws.Range(ws.Cells(r, FIRST_COL), ws.Cells(r, LAST_COL)).Interior.ColorIndex = GRAY_INDEX
     Next i
 
-    ' 2) Подготовим источник: найдём блок города на листе Werbung
-    Dim city As String
-    city = Trim$(CStr(ws.Range("B1").Value))
+    ' -------- 2) Подготовим источник по городу --------
+    Dim city As String: city = Trim$(CStr(ws.Range("B1").Value))
     If Len(city) = 0 Then
         MsgBox "В ячейке B1 не указан город.", vbExclamation
         GoTo TidyExit
@@ -61,34 +57,49 @@ Public Sub ShadeAndFillFromWerbung()
         GoTo TidyExit
     End If
     srcEnd = FindNextCityHeaderBelowWerbung(wsrc, srcStart + 1)
-    If srcEnd = 0 Then srcEnd = wsrc.Cells(wsrc.Rows.Count, "A").End(xlUp).Row + 1 ' до конца листа
+    If srcEnd = 0 Then srcEnd = wsrc.Cells(wsrc.Rows.Count, "A").End(xlUp).Row + 1
 
-    ' Соберём данные A,C,E из блока города на Werbung последовательно
-    Dim srcData As Collection
-    Set srcData = New Collection
+    ' соберём записи из блока города: A, C, E и ЖИРНЫЕ фрагменты из D
+    Dim srcData As Collection: Set srcData = New Collection
+    Dim rr As Long, rec As Variant, boldPart As String
 
-    Dim rr As Long, rec As Variant
     For rr = srcStart + 1 To srcEnd - 1
-        ' пропускаем пустые строки
-        If HasAnyValue(wsrc, rr, Array("A", "C", "E")) Then
+        If HasAnyValue(wsrc, rr, Array("A", "C", "D", "E")) Then
+            boldPart = ExtractBoldText(wsrc.Cells(rr, "D"))
             rec = Array( _
-                wsrc.Cells(rr, "A").Value, _  ' -> A
-                wsrc.Cells(rr, "C").Value, _  ' -> G
-                wsrc.Cells(rr, "E").Value)    ' -> H
+                wsrc.Cells(rr, "A").Value, _
+                wsrc.Cells(rr, "C").Value, _
+                wsrc.Cells(rr, "E").Value, _
+                boldPart)
             srcData.Add rec
         End If
     Next rr
 
-    ' 3) Переносим: по порядку серых строк ↔ по порядку строк из блока города
-    Dim n As Long: n = Application.WorksheetFunction.Min(grayRows.Count, srcData.Count)
+    ' -------- 3) Переносим по порядку в серые строки --------
+    Dim n As Long
+    n = Application.WorksheetFunction.Min(grayRows.Count, srcData.Count)
     If n = 0 Then GoTo TidyExit
 
     For i = 1 To n
         r = CLng(grayRows(i))
-        rec = srcData(i - 1) ' массив 0..2
-        ws.Cells(r, "A").Value = rec(0)  ' из A (Werbung)
-        ws.Cells(r, "G").Value = rec(1)  ' из C (Werbung)
-        ws.Cells(r, "H").Value = rec(2)  ' из E (Werbung)
+        rec = srcData(i)            ' коллекция 1-based; rec(0..3)
+
+        ws.Cells(r, "A").Value = rec(0) ' из A (Werbung) -> A
+        ws.Cells(r, "G").Value = rec(1) ' из C (Werbung) -> G
+        ws.Cells(r, "H").Value = rec(2) ' из E (Werbung) -> H
+
+        ' Жирная часть из D -> J; если начинается с "+", ставим апостроф
+        Dim s As String
+        s = CStr(rec(3))
+        If Len(s) > 0 Then
+            If Left$(s, 1) = "+" Then
+                ws.Cells(r, "J").Value = "'" & s
+            Else
+                ws.Cells(r, "J").Value = s
+            End If
+        Else
+            ws.Cells(r, "J").ClearContents
+        End If
     Next i
 
 TidyExit:
@@ -96,7 +107,7 @@ TidyExit:
     Application.ScreenUpdating = True
 End Sub
 
-' ===== Helpers =====
+' ====== ВСПОМОГАТЕЛЬНЫЕ ======
 
 Private Function FirstWord(ByVal s As String) As String
     s = Trim$(s)
@@ -108,8 +119,6 @@ Private Function FirstWord(ByVal s As String) As String
 End Function
 
 Private Function FindCityHeaderOnWerbung(ByVal ws As Worksheet, ByVal city As String) As Long
-    ' Ищем строку на листе Werbung, где в колонке A стоит название города.
-    ' Обычно она серая, но полагаемся прежде всего на текст.
     Dim last As Long, r As Long
     last = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
     For r = 1 To last
@@ -121,12 +130,10 @@ Private Function FindCityHeaderOnWerbung(ByVal ws As Worksheet, ByVal city As St
 End Function
 
 Private Function FindNextCityHeaderBelowWerbung(ByVal ws As Worksheet, ByVal startRow As Long) As Long
-    ' Поищем следующую «шапку города»: ячейка A не пустая и (как правило) с заливкой/жирным
     Dim last As Long, r As Long
     last = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
     For r = startRow To last
         If Len(Trim$(CStr(ws.Cells(r, "A").Value))) > 0 Then
-            ' если хотите, можно усилить критерий: проверять серую заливку или жирный
             If ws.Cells(r, "B").Value = "" And ws.Cells(r, "A").Font.Bold Then
                 FindNextCityHeaderBelowWerbung = r
                 Exit Function
@@ -143,4 +150,46 @@ Private Function HasAnyValue(ws As Worksheet, ByVal rowNum As Long, cols As Vari
             Exit Function
         End If
     Next i
+End Function
+
+' Извлекает только жирные фрагменты текста из ячейки (если их несколько — склеивает через пробел).
+Private Function ExtractBoldText(ByVal rng As Range) As String
+    Dim txt As String: txt = CStr(rng.Value)
+    If Len(txt) = 0 Then Exit Function
+
+    Dim i As Long, segStart As Long, segLen As Long
+    Dim isBold As Boolean, curBold As Boolean
+    Dim result As String
+
+    If Len(txt) = 0 Then
+        ExtractBoldText = ""
+        Exit Function
+    End If
+
+    curBold = False
+    segStart = 0
+    segLen = 0
+
+    For i = 1 To Len(txt)
+        isBold = rng.Characters(i, 1).Font.Bold
+        If isBold <> curBold Then
+            If curBold And segLen > 0 Then
+                If Len(result) > 0 Then result = result & " "
+                result = result & Mid$(txt, segStart, segLen)
+            End If
+            curBold = isBold
+            segStart = i
+            segLen = 1
+        Else
+            segLen = segLen + 1
+        End If
+    Next i
+
+    ' добавить хвост, если он жирный
+    If curBold And segLen > 0 Then
+        If Len(result) > 0 Then result = result & " "
+        result = result & Mid$(txt, segStart, segLen)
+    End If
+
+    ExtractBoldText = Trim$(result)
 End Function
