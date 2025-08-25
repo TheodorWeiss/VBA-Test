@@ -1,122 +1,50 @@
 Option Explicit
 
-Public Sub HighlightMatchesAgainstPonholz()
+Public Sub ShadeByFirstWord()
     Const SHEET_NAME As String = "Werbung_Reordered"
-    Const BASE_CITY As String = "Ponholz"
+    Const START_ROW As Long = 3        ' первая строка для заливки
+    Const FIRST_COL As Long = 1        ' A
+    Const LAST_COL As Long = 9         ' I
+    Const GRAY_INDEX As Long = 15      ' стандартный светло-серый (ColorIndex)
 
     Dim ws As Worksheet
     Set ws = ThisWorkbook.Worksheets(SHEET_NAME)
 
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
-    On Error GoTo TidyExit
 
-    Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    If lastRow < START_ROW Then GoTo TidyExit
 
-    '--- Найдём блок Ponholz
-    Dim baseHeader As Long: baseHeader = FindCityHeaderRow(ws, BASE_CITY, lastRow)
-    If baseHeader = 0 Then
-        MsgBox "Город '" & BASE_CITY & "' не найден в колонке A.", vbExclamation
-        GoTo TidyExit
-    End If
-    Dim baseEnd As Long: baseEnd = FindNextCityHeaderBelow(ws, baseHeader + 1, lastRow)
-    If baseEnd = 0 Then baseEnd = lastRow + 1     ' Ponholz последний город
+    ' 1) Закрасить строку 3
+    ws.Range(ws.Cells(START_ROW, FIRST_COL), ws.Cells(START_ROW, LAST_COL)).Interior.ColorIndex = GRAY_INDEX
 
-    '--- Собираем словарь: категория -> набор артикулов
-    Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
-    Dim r As Long, cat As String, arr, i As Long
-    For r = baseHeader + 1 To baseEnd - 1
-        If Not IsCityHeader(ws, r) Then
-            cat = Trim(CStr(ws.Cells(r, "A").Value))
-            If Len(cat) > 0 Then
-                If Not dict.Exists(cat) Then dict.Add cat, CreateObject("Scripting.Dictionary")
-                arr = Split(CStr(ws.Cells(r, "B").Value), ",")
-                For i = LBound(arr) To UBound(arr)
-                    Dim id As String: id = Trim$(CStr(arr(i)))
-                    If Len(id) > 0 Then dict(cat)(id) = True
-                Next
-            End If
+    ' 2) Идём дальше: красим, когда меняется первое слово в B
+    Dim r As Long
+    Dim prevFirst As String, curFirst As String
+
+    prevFirst = FirstWord(CStr(ws.Cells(START_ROW, "B").Value))
+
+    For r = START_ROW + 1 To lastRow
+        curFirst = FirstWord(CStr(ws.Cells(r, "B").Value))
+        If StrComp(curFirst, prevFirst, vbTextCompare) <> 0 Then
+            ws.Range(ws.Cells(r, FIRST_COL), ws.Cells(r, LAST_COL)).Interior.ColorIndex = GRAY_INDEX
         End If
+        prevFirst = curFirst
     Next r
-
-    '--- Проходим по остальным городам
-    Dim curCityHeader As Long: curCityHeader = baseEnd          ' стоим на заголовке СЛЕДУЮЩЕГО города
-    Do While curCityHeader <= lastRow
-        Dim nextHeader As Long: nextHeader = FindNextCityHeaderBelow(ws, curCityHeader + 1, lastRow)
-        If nextHeader = 0 Then nextHeader = lastRow + 1         ' последний блок
-
-        For r = curCityHeader + 1 To nextHeader - 1             ' строки внутри города
-            If Not IsCityHeader(ws, r) Then
-                cat = Trim$(CStr(ws.Cells(r, "A").Value))
-                If Len(cat) > 0 And dict.Exists(cat) Then
-                    BoldMatchesInCell ws.Cells(r, "B"), dict(cat)
-                End If
-            End If
-        Next r
-
-        curCityHeader = nextHeader                              ' ПЕРЕХОД к следующему городу
-    Loop
 
 TidyExit:
     Application.Calculation = xlCalculationAutomatic
     Application.ScreenUpdating = True
 End Sub
 
-'----------------- ВСПОМОГАТЕЛЬНЫЕ -----------------
-
-Private Function FindCityHeaderRow(ws As Worksheet, cityName As String, lastRow As Long) As Long
-    Dim r As Long
-    For r = 1 To lastRow
-        If StrComp(Trim$(CStr(ws.Cells(r, "A").Value)), cityName, vbTextCompare) = 0 Then
-            If IsCityHeader(ws, r) Then
-                FindCityHeaderRow = r
-                Exit Function
-            End If
-        End If
-    Next r
+Private Function FirstWord(ByVal s As String) As String
+    ' Возвращает первое слово (до первого пробела) из строки s
+    s = Trim$(s)
+    If Len(s) = 0 Then
+        FirstWord = ""
+    Else
+        FirstWord = Split(s, " ")(0)
+    End If
 End Function
-
-Private Function FindNextCityHeaderBelow(ws As Worksheet, startRow As Long, lastRow As Long) As Long
-    Dim r As Long
-    For r = startRow To lastRow
-        If IsCityHeader(ws, r) Then
-            FindNextCityHeaderBelow = r
-            Exit Function
-        End If
-    Next r
-End Function
-
-Private Function IsCityHeader(ws As Worksheet, r As Long) As Boolean
-    ' Город: A не пусто, B пусто, A жирный (как на твоём скрине)
-    IsCityHeader = (Len(Trim$(CStr(ws.Cells(r, "A").Value))) > 0) _
-                   And (Len(Trim$(CStr(ws.Cells(r, "B").Value))) = 0) _
-                   And ws.Cells(r, "A").Font.Bold
-End Function
-
-Private Sub BoldMatchesInCell(ByVal cell As Range, ByVal setIds As Object)
-    Dim txt As String: txt = CStr(cell.Value)
-    If Len(Trim$(txt)) = 0 Then Exit Sub
-
-    Dim parts As Variant: parts = Split(txt, ",")
-    Dim pos As Long: pos = 1
-    Dim i As Long
-
-    ' НЕ сбрасываем жирный для всей ячейки, чтобы быстрее работать;
-    ' просто делаем жирными совпадающие «числа».
-    For i = LBound(parts) To UBound(parts)
-        Dim token As String: token = CStr(parts(i))
-        Dim clean As String: clean = Trim$(token)
-        If Len(clean) > 0 Then
-            If setIds.Exists(clean) Then
-                ' найдём позицию «чистой» части внутри токена (после пробелов)
-                Dim p As Long: p = InStr(1, token, clean, vbBinaryCompare)
-                If p = 0 Then p = 1
-                cell.Characters(Start:=pos + p - 1, Length:=Len(clean)).Font.Bold = True
-            End If
-        End If
-
-        ' смещаем указатель: длина токена + запятая (кроме последнего)
-        pos = pos + Len(token)
-        If i < UBound(parts) Then pos = pos + 1
-    Next i
-End Sub
