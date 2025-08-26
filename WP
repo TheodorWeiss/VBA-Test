@@ -1,195 +1,129 @@
 Option Explicit
 
-Public Sub ShadeAndFill_FromWerbung_OneSheet()
-    Const SHT_MAIN As String = "Werbung_Reordered" ' работаем с ОДНИМ листом
-    Const SHT_SRC  As String = "Werbung"           ' источник
-    Const START_ROW As Long = 3                    ' первая серая строка
-    Const FIRST_COL As Long = 1                    ' A
-    Const LAST_COL  As Long = 9                    ' I
-    Const GRAY_INDEX As Long = 15                  ' светло-серый (ColorIndex)
-
-    Dim ws As Worksheet, wsrc As Worksheet
-    Set ws = ThisWorkbook.Worksheets(SHT_MAIN)
-    Set wsrc = ThisWorkbook.Worksheets(SHT_SRC)
-
-    Application.ScreenUpdating = False
-    Application.Calculation = xlCalculationManual
-
-    Dim lastRow As Long
-    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
-    If lastRow < START_ROW Then GoTo TidyExit
-
-    ' -------- 1) Собираем номера «серых» строк --------
-    Dim grayRows As Collection: Set grayRows = New Collection
-    grayRows.Add START_ROW ' строка 3 всегда серая
-
-    Dim r As Long, prevFirst As String, curFirst As String
-    prevFirst = FirstWord(CStr(ws.Cells(START_ROW, "B").Value))
-
-    For r = START_ROW + 1 To lastRow
-        curFirst = FirstWord(CStr(ws.Cells(r, "B").Value))
-        If StrComp(curFirst, prevFirst, vbTextCompare) <> 0 Then
-            grayRows.Add r
-        End If
-        prevFirst = curFirst
-    Next r
-
-    ' очистим заливку A:I и прокрасим нужные строки
-    ws.Range(ws.Cells(START_ROW, FIRST_COL), ws.Cells(lastRow, LAST_COL)).Interior.Pattern = xlNone
-
-    Dim i As Long
-    For i = 1 To grayRows.Count
-        r = CLng(grayRows(i))
-        ws.Range(ws.Cells(r, FIRST_COL), ws.Cells(r, LAST_COL)).Interior.ColorIndex = GRAY_INDEX
-    Next i
-
-    ' -------- 2) Подготовим источник по городу --------
-    Dim city As String: city = Trim$(CStr(ws.Range("B1").Value))
-    If Len(city) = 0 Then
-        MsgBox "В ячейке B1 не указан город.", vbExclamation
-        GoTo TidyExit
+Public Sub HighlightPonholzMatches()
+    '=== SETTINGS ===
+    Dim ws As Worksheet
+    Set ws = ActiveSheet          ' or: Set ws = ThisWorkbook.Worksheets("Werbung_Reordered")
+    
+    Dim colA As Long: colA = 1    ' Column A
+    Dim colB As Long: colB = 2    ' Column B
+    
+    '--- find the header rows for Ponholz and Erfurt
+    Dim rowPonholz As Long, rowErfurt As Long, lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, colA).End(xlUp).Row
+    
+    rowPonholz = FindInColumn(ws, colA, "Ponholz")
+    rowErfurt = FindInColumn(ws, colA, "Erfurt")
+    If rowPonholz = 0 Then
+        MsgBox "City 'Ponholz' not found in column A.", vbExclamation: Exit Sub
     End If
-
-    Dim srcStart As Long, srcEnd As Long
-    srcStart = FindCityHeaderOnWerbung(wsrc, city)
-    If srcStart = 0 Then
-        MsgBox "Город '" & city & "' не найден на листе '" & SHT_SRC & "'.", vbExclamation
-        GoTo TidyExit
+    If rowErfurt = 0 Then
+        MsgBox "City 'Erfurt' not found in column A.", vbExclamation: Exit Sub
     End If
-    srcEnd = FindNextCityHeaderBelowWerbung(wsrc, srcStart + 1)
-    If srcEnd = 0 Then srcEnd = wsrc.Cells(wsrc.Rows.Count, "A").End(xlUp).Row + 1
-
-    ' соберём записи из блока города: A, C, E и ЖИРНЫЕ фрагменты из D
-    Dim srcData As Collection: Set srcData = New Collection
-    Dim rr As Long, rec As Variant, boldPart As String
-
-    For rr = srcStart + 1 To srcEnd - 1
-        If HasAnyValue(wsrc, rr, Array("A", "C", "D", "E")) Then
-            boldPart = ExtractBoldText(wsrc.Cells(rr, "D"))
-            rec = Array( _
-                wsrc.Cells(rr, "A").Value, _
-                wsrc.Cells(rr, "C").Value, _
-                wsrc.Cells(rr, "E").Value, _
-                boldPart)
-            srcData.Add rec
-        End If
-    Next rr
-
-    ' -------- 3) Переносим по порядку в серые строки --------
-    Dim n As Long
-    n = Application.WorksheetFunction.Min(grayRows.Count, srcData.Count)
-    If n = 0 Then GoTo TidyExit
-
-    For i = 1 To n
-        r = CLng(grayRows(i))
-        rec = srcData(i)            ' коллекция 1-based; rec(0..3)
-
-        ws.Cells(r, "A").Value = rec(0) ' из A (Werbung) -> A
-        ws.Cells(r, "G").Value = rec(1) ' из C (Werbung) -> G
-        ws.Cells(r, "H").Value = rec(2) ' из E (Werbung) -> H
-
-        ' Жирная часть из D -> J; если начинается с "+", ставим апостроф
-        Dim s As String
-        s = CStr(rec(3))
-        If Len(s) > 0 Then
-            If Left$(s, 1) = "+" Then
-                ws.Cells(r, "J").Value = "'" & s
-            Else
-                ws.Cells(r, "J").Value = s
-            End If
+    
+    '--- determine end of Ponholz block (next bold city header below Ponholz)
+    Dim ponholzEnd As Long
+    ponholzEnd = NextCityHeaderRow(ws, rowPonholz + 1, lastRow, colA)
+    If ponholzEnd = 0 Then ponholzEnd = lastRow + 1   ' if Ponholz is the last block
+    
+    '--- build a map: key = text in column A, value = set of article numbers from column B
+    Dim mapPonholz As Object
+    Set mapPonholz = BuildABMap(ws, rowPonholz + 1, ponholzEnd - 1, colA, colB)
+    
+    '--- iterate from Erfurt to the end and bold-match numbers in B
+    Dim r As Long
+    For r = rowErfurt To lastRow
+        'skip city header lines (bold city names in A)
+        If Len(ws.Cells(r, colA).Value2) > 0 And ws.Cells(r, colA).Font.Bold = True Then
+            'header row -> continue
         Else
-            ws.Cells(r, "J").ClearContents
+            Dim keyA As String
+            keyA = Trim(CStr(ws.Cells(r, colA).Value2))
+            
+            If mapPonholz.Exists(keyA) Then
+                Dim cellB As Range
+                Set cellB = ws.Cells(r, colB)
+                
+                'Clear previous bold formatting in this cell only
+                If Len(cellB.Value2) > 0 Then
+                    cellB.Characters(1, Len(cellB.Value2)).Font.Bold = False
+                End If
+                
+                'Bold only those numbers that are present in Ponholz for the same A
+                BoldMatchingNumbers cellB, mapPonholz(keyA)
+            End If
         End If
-    Next i
-
-TidyExit:
-    Application.Calculation = xlCalculationAutomatic
-    Application.ScreenUpdating = True
+    Next r
 End Sub
 
-' ====== ВСПОМОГАТЕЛЬНЫЕ ======
+'===================== Helpers =====================
 
-Private Function FirstWord(ByVal s As String) As String
-    s = Trim$(s)
-    If Len(s) = 0 Then
-        FirstWord = ""
+Private Function FindInColumn(ws As Worksheet, colIdx As Long, ByVal textToFind As String) As Long
+    'Return the row of the first exact match in column; 0 if not found
+    Dim f As Range
+    Set f = ws.Columns(colIdx).Find(What:=textToFind, LookAt:=xlWhole, LookIn:=xlValues, _
+                                    SearchOrder:=xlByRows, SearchDirection:=xlNext, MatchCase:=False)
+    If Not f Is Nothing Then
+        FindInColumn = f.Row
     Else
-        FirstWord = Split(s, " ")(0)
+        FindInColumn = 0
     End If
 End Function
 
-Private Function FindCityHeaderOnWerbung(ByVal ws As Worksheet, ByVal city As String) As Long
-    Dim last As Long, r As Long
-    last = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
-    For r = 1 To last
-        If StrComp(Trim$(CStr(ws.Cells(r, "A").Value)), city, vbTextCompare) = 0 Then
-            FindCityHeaderOnWerbung = r
+Private Function NextCityHeaderRow(ws As Worksheet, startRow As Long, lastRow As Long, colA As Long) As Long
+    'City headers are bold + non-empty in column A
+    Dim r As Long
+    For r = startRow To lastRow
+        If Len(ws.Cells(r, colA).Value2) > 0 And ws.Cells(r, colA).Font.Bold = True Then
+            NextCityHeaderRow = r
             Exit Function
         End If
     Next r
+    NextCityHeaderRow = 0
 End Function
 
-Private Function FindNextCityHeaderBelowWerbung(ByVal ws As Worksheet, ByVal startRow As Long) As Long
-    Dim last As Long, r As Long
-    last = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
-    For r = startRow To last
-        If Len(Trim$(CStr(ws.Cells(r, "A").Value))) > 0 Then
-            If ws.Cells(r, "B").Value = "" And ws.Cells(r, "A").Font.Bold Then
-                FindNextCityHeaderBelowWerbung = r
-                Exit Function
+Private Function BuildABMap(ws As Worksheet, r1 As Long, r2 As Long, colA As Long, colB As Long) As Object
+    'Build dictionary: key = A text; value = Dictionary of numbers from B
+    Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
+    Dim re As Object: Set re = CreateObject("VBScript.RegExp")
+    re.Global = True
+    re.IgnoreCase = True
+    re.Pattern = "\d+"
+    
+    Dim r As Long, keyA As String, txtB As String, m As Object
+    For r = r1 To r2
+        keyA = Trim(CStr(ws.Cells(r, colA).Value2))
+        If keyA <> vbNullString Then
+            txtB = CStr(ws.Cells(r, colB).Value2)
+            If Not dict.Exists(keyA) Then dict.Add keyA, CreateObject("Scripting.Dictionary")
+            If Len(txtB) > 0 Then
+                For Each m In re.Execute(txtB)
+                    If Not dict(keyA).Exists(m.Value) Then dict(keyA).Add m.Value, True
+                Next m
             End If
         End If
     Next r
+    
+    Set BuildABMap = dict
 End Function
 
-Private Function HasAnyValue(ws As Worksheet, ByVal rowNum As Long, cols As Variant) As Boolean
-    Dim i As Long
-    For i = LBound(cols) To UBound(cols)
-        If Len(Trim$(CStr(ws.Cells(rowNum, CStr(cols(i))).Value))) > 0 Then
-            HasAnyValue = True
-            Exit Function
+Private Sub BoldMatchingNumbers(ByVal targetCell As Range, ByVal setNumbers As Object)
+    'Bold only those numeric substrings in targetCell that are present in setNumbers
+    Dim txt As String: txt = CStr(targetCell.Value2)
+    If Len(txt) = 0 Then Exit Sub
+    
+    Dim re As Object: Set re = CreateObject("VBScript.RegExp")
+    re.Global = True
+    re.IgnoreCase = True
+    re.Pattern = "\d+"
+    
+    Dim matches As Object, m As Object
+    Set matches = re.Execute(txt)
+    
+    For Each m In matches
+        If setNumbers.Exists(m.Value) Then
+            'VBScript.RegExp gives 0-based FirstIndex
+            targetCell.Characters(m.FirstIndex + 1, m.Length).Font.Bold = True
         End If
-    Next i
-End Function
-
-' Извлекает только жирные фрагменты текста из ячейки (если их несколько — склеивает через пробел).
-Private Function ExtractBoldText(ByVal rng As Range) As String
-    Dim txt As String: txt = CStr(rng.Value)
-    If Len(txt) = 0 Then Exit Function
-
-    Dim i As Long, segStart As Long, segLen As Long
-    Dim isBold As Boolean, curBold As Boolean
-    Dim result As String
-
-    If Len(txt) = 0 Then
-        ExtractBoldText = ""
-        Exit Function
-    End If
-
-    curBold = False
-    segStart = 0
-    segLen = 0
-
-    For i = 1 To Len(txt)
-        isBold = rng.Characters(i, 1).Font.Bold
-        If isBold <> curBold Then
-            If curBold And segLen > 0 Then
-                If Len(result) > 0 Then result = result & " "
-                result = result & Mid$(txt, segStart, segLen)
-            End If
-            curBold = isBold
-            segStart = i
-            segLen = 1
-        Else
-            segLen = segLen + 1
-        End If
-    Next i
-
-    ' добавить хвост, если он жирный
-    If curBold And segLen > 0 Then
-        If Len(result) > 0 Then result = result & " "
-        result = result & Mid$(txt, segStart, segLen)
-    End If
-
-    ExtractBoldText = Trim$(result)
-End Function
+    Next m
+End Sub
