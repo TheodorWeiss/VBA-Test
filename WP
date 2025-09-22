@@ -1,1 +1,16 @@
-VBA
+=GLÄTTEN(WENNFEHLER(
+TEIL(
+ TEIL("|"&A5;
+  FINDEN("¶";WECHSELN("|"&A5;"|";"¶";$J$1))+1;
+  FINDEN("¶";WECHSELN("|"&A5;"|";"¶";$J$1+1))-FINDEN("¶";WECHSELN("|"&A5;"|";"¶";$J$1))-1
+ );
+ FINDEN(" - ";
+  TEIL("|"&A5;
+   FINDEN("¶";WECHSELN("|"&A5;"|";"¶";$J$1))+1;
+   FINDEN("¶";WECHSELN("|"&A5;"|";"¶";$J$1+1))-FINDEN("¶";WECHSELN("|"&A5;"|";"¶";$J$1))-1
+ ))+3;999)
+;
+TEIL("|"&A5;
+ FINDEN("¶";WECHSELN("|"&A5;"|";"¶";$J$1))+1;
+ FINDEN("¶";WECHSELN("|"&A5;"|";"¶";$J$1+1))-FINDEN("¶";WECHSELN("|"&A5;"|";"¶";$J$1))-1)
+))
