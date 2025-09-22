@@ -1,17 +1,12 @@
-=GLÄTTEN(WENNFEHLER(
- TEIL(
-  TEIL("|"&$A5&"|";
-   FINDEN("¶";WECHSELN("|"&$A5&"|";"|";"¶";$J$3))+1;
-   FINDEN("¶";WECHSELN("|"&$A5&"|";"|";"¶";$J$3+1))
-   -FINDEN("¶";WECHSELN("|"&$A5&"|";"|";"¶";$J$3))-1);
-  FINDEN(" - ";
-   TEIL("|"&$A5&"|";
-    FINDEN("¶";WECHSELN("|"&$A5&"|";"|";"¶";$J$3))+1;
-    FINDEN("¶";WECHSELN("|"&$A5&"|";"|";"¶";$J$3+1))
-    -FINDEN("¶";WECHSELN("|"&$A5&"|";"|";"¶";$J$3))-1)
-  )+3;999);
- TEIL("|"&$A5&"|";
-  FINDEN("¶";WECHSELN("|"&$A5&"|";"|";"¶";$J$3))+1;
-  FINDEN("¶";WECHSELN("|"&$A5&"|";"|";"¶";$J$3+1))
-  -FINDEN("¶";WECHSELN("|"&$A5&"|";"|";"¶";$J$3))-1)
-))
+=MAX(
+WENNFEHLER(FINDEN("¶";WECHSELN(B2;"0";"¶";LÄNGE(B2)-LÄNGE(WECHSELN(B2;"0";""))));0);
+WENNFEHLER(FINDEN("¶";WECHSELN(B2;"1";"¶";LÄNGE(B2)-LÄNGE(WECHSELN(B2;"1";""))));0);
+WENNFEHLER(FINDEN("¶";WECHSELN(B2;"2";"¶";LÄNGE(B2)-LÄNGE(WECHSELN(B2;"2";""))));0);
+WENNFEHLER(FINDEN("¶";WECHSELN(B2;"3";"¶";LÄNGE(B2)-LÄNGE(WECHSELN(B2;"3";""))));0);
+WENNFEHLER(FINDEN("¶";WECHSELN(B2;"4";"¶";LÄNGE(B2)-LÄNGE(WECHSELN(B2;"4";""))));0);
+WENNFEHLER(FINDEN("¶";WECHSELN(B2;"5";"¶";LÄNGE(B2)-LÄNGE(WECHSELN(B2;"5";""))));0);
+WENNFEHLER(FINDEN("¶";WECHSELN(B2;"6";"¶";LÄNGE(B2)-LÄNGE(WECHSELN(B2;"6";""))));0);
+WENNFEHLER(FINDEN("¶";WECHSELN(B2;"7";"¶";LÄNGE(B2)-LÄNGE(WECHSELN(B2;"7";""))));0);
+WENNFEHLER(FINDEN("¶";WECHSELN(B2;"8";"¶";LÄNGE(B2)-LÄNGE(WECHSELN(B2;"8";""))));0);
+WENNFEHLER(FINDEN("¶";WECHSELN(B2;"9";"¶";LÄNGE(B2)-LÄNGE(WECHSELN(B2;"9";""))));0)
+)
