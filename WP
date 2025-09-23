@@ -1,11 +1,12 @@
-=GLÄTTEN(LINKS(
- TEIL(";"&WECHSELN(A2;"|";";"); 
-  FINDEN("¶";WECHSELN(";"&WECHSELN(A2;"|";";");";";"¶";J2))+1; 
-  FINDEN("¶";WECHSELN(";"&WECHSELN(A2;"|";";");";";"¶";J2+1)) 
-   - FINDEN("¶";WECHSELN(";"&WECHSELN(A2;"|";";");";";"¶";J2))-1);
+=WENNFEHLER(GLÄTTEN(LINKS(
+ TEIL("|"&$A2&"|";
+  FINDEN("¶";WECHSELN("|"&$A2&"|";"|";"¶";$J$2))+1;
+  FINDEN("¶";WECHSELN("|"&$A2&"|";"|";"¶";$J$2+1))
+   -FINDEN("¶";WECHSELN("|"&$A2&"|";"|";"¶";$J$2))-1);
  FINDEN("-";
-  TEIL(";"&WECHSELN(A2;"|";";"); 
-   FINDEN("¶";WECHSELN(";"&WECHSELN(A2;"|";";");";";"¶";J2))+1; 
-   FINDEN("¶";WECHSELN(";"&WECHSELN(A2;"|";";");";";"¶";J2+1)) 
-    - FINDEN("¶";WECHSELN(";"&WECHSELN(A2;"|";";");";";"¶";J2))-1)
- )-1))
+  TEIL("|"&$A2&"|";
+   FINDEN("¶";WECHSELN("|"&$A2&"|";"|";"¶";$J$2))+1;
+   FINDEN("¶";WECHSELN("|"&$A2&"|";"|";"¶";$J$2+1))
+    -FINDEN("¶";WECHSELN("|"&$A2&"|";"|";"¶";$J$2))-1)
+ )-1)));
+"")
