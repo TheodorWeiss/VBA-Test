@@ -1,12 +1,49 @@
-=WENNFEHLER(GLÄTTEN(LINKS(
- TEIL("|"&$A5&"|";
-  FINDEN("¶";WECHSELN("|"&$A5&"|";"|";"¶";$Y$1))+1;
-  FINDEN("¶";WECHSELN("|"&$A5&"|";"|";"¶";$Y$1+1))
-   -FINDEN("¶";WECHSELN("|"&$A5&"|";"|";"¶";$Y$1))-1);
- FINDEN("-";
-  TEIL("|"&$A5&"|";
-   FINDEN("¶";WECHSELN("|"&$A5&"|";"|";"¶";$Y$1))+1;
-   FINDEN("¶";WECHSELN("|"&$A5&"|";"|";"¶";$Y$1+1))
-    -FINDEN("¶";WECHSELN("|"&$A5&"|";"|";"¶";$Y$1))-1)
- )-1)));
+=WENNFEHLER(
+ GLÄTTEN(
+  LINKS(
+   TEIL("|"&$A5&"|";
+     FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1))+1;
+     FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1+1))-
+     FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1))-1
+   );
+   MIN(
+     WENNFEHLER(FINDEN(" - ";
+       TEIL("|"&$A5&"|";
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1))+1;
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1+1))-
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1))-1
+       )); LÄNGE(
+       TEIL("|"&$A5&"|";
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1))+1;
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1+1))-
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1))-1
+       ))+1
+     );
+     WENNFEHLER(FINDEN("-");
+       TEIL("|"&$A5&"|";
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1))+1;
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1+1))-
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1))-1
+       ); LÄNGE(
+       TEIL("|"&$A5&"|";
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1))+1;
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1+1))-
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1))-1
+       ))+1
+     );
+     WENNFEHLER(FINDEN(" ";
+       TEIL("|"&$A5&"|";
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1))+1;
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1+1))-
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1))-1
+       ); LÄNGE(
+       TEIL("|"&$A5&"|";
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1))+1;
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1+1))-
+         FINDEN(ZEICHEN(1);WECHSELN("|"&$A5&"|";"|";ZEICHEN(1);$Y$1))-1
+       ))+1
+     )
+   )-1
+  )
+ );
 "")
