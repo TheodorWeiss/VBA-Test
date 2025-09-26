@@ -1,53 +1,20 @@
-Отлично, тогда я подготовлю версию чуть развёрнутее, чтобы у тебя был текст для вступления и обсуждения на встрече. Он будет звучать как связный рассказ, но всё ещё в Stichpunkt-/Agenda-Stil, чтобы легко ориентироваться.
+Вот как можно оформить твой Fortschritt und Vorschlag для встречи — чуть развернуто, но понятно:
 
 ⸻
 
-📌 Einführung & aktueller Stand
-	•	Zwischen Netto und Edeka gibt es wesentliche Unterschiede in der Logik der Werbeplätze:
-	•	Edeka: Jedes Werbeplatz ist einem klar definierten Artikel oder einem engen Cluster zugeordnet (z. B. „Milka 80–100g“). Dadurch lässt sich sehr einfach messen, wie oft dieser Artikel beworben wurde und welchen Effekt er gebracht hat.
-	•	Netto: Ein Werbeplatz entspricht einem sogenannten Verbund, hinter dem nicht nur ein Artikel, sondern zwischen 1 und 10 verschiedene Artikel stehen können. Die Zusammensetzung dieser Verbünde ändert sich zudem von Woche zu Woche. → Dadurch wird die Vergleichbarkeit über die Zeit deutlich schwieriger.
-	•	Unser Ziel ist, zu verstehen:
-	•	Wie viele A-Artikel im Prospekt (und insbesondere auf der Titelseite) wirklich den Abstrahleffekt erzeugen.
-	•	Wo die Sättigungsgrenze liegt, also ab wie vielen Artikeln keine zusätzliche Synergie mehr entsteht (Hypothese: etwa bei 4–6 Artikeln).
-	•	Die bisherige ABC-Analyse (A > 500, B = 400–500, …) ist eine pragmatische Lösung, aber die Grenzen sind willkürlich. Artikel mit Score 499 und 501 unterscheiden sich kaum, landen aber in verschiedenen Klassen.
-👉 Für unsere Analysen ist es sinnvoller, den NMDAX-Score direkt als metrischen Wert zu betrachten, anstatt nur in A/B/C-Kategorien zu denken.
-	•	Wichtig ist außerdem die Funnel-Logik:
-	•	Im Prospekt nimmt der Kunde das wahr, was bildlich dargestellt ist. Das erzeugt Aufmerksamkeit.
-	•	Im Laden sieht er aber nicht nur diesen einen Artikel, sondern eventuell auch weitere Produkte derselben Aktion. Hier findet die eigentliche Kaufentscheidung statt.
-	•	Fazit: Der Prospekt bestimmt die Wahrnehmung, der Laden bestimmt die Conversion.
+📌 Mein bisheriger Ansatz mit den Daten
+	•	Ich habe alle Zeilen aus der NMDAX-Datei genommen und die langen Bezeichnungen der Verbünde in einzelne Artikel/Bezeichnungen zerlegt.
+	•	Pro Verbund ergeben sich dadurch bis zu 10 einzelne Artikel.
+	•	Anschließend habe ich auf Basis des Jahresumsatzes 2025 jeweils den Hauptartikel bestimmt und den gesamten Verbund nach diesem Hauptartikel benannt.
+	•	Ohne ein Wörterbuch/Mapping war es allerdings nicht möglich, überall konsistente Namen zu erzeugen.
 
 ⸻
 
-📌 Hypothesen & Ansätze
-	•	Grundregel: Ein Verbund = ein Werbeplatz. → Für die Zählung der A-Artikel im Prospekt behandeln wir ihn als 1 Einheit.
-	•	Für die Analyse im Detail brauchen wir aber flexiblere Regeln:
-	•	Hauptartikel-Logik: Verbundname = der Artikel mit dem höchsten Umsatz oder Score.
-	•	Mix-Logik: Wenn mehrere Marken im Verbund ähnlich stark sind, können wir den Verbund als „Mix“ definieren (z. B. „Bier-Mix“, „Schoko-Mix“).
-	•	Gewichtete Anteile: Wir verteilen den NMDAX eines Verbundes proportional auf die beteiligten Marken. Damit können wir z. B. Rolli und Leibniz später getrennt analysieren.
-	•	Für Verbünde mit mehreren Marken:
-	•	Bei 2 Marken → Hauptartikel oder Mix, alternativ gewichtet.
-	•	Bei 3 Marken → entweder Mix oder Gewichtung auf alle drei.
-	•	Bei 4–5 Marken (z. B. Bier, Softdrinks) → eher Kategorie-Ebene („Bier-Mix“, „Cola/Fanta/Sprite“), sonst wird es zu kleinteilig.
-	•	Misch-Verbünde können so gleichzeitig als eine Prospekt-Position gezählt werden und trotzdem im Detail nach Markenbeiträgen analysiert werden.
+📌 Vorschlag für die nächsten Schritte
+	•	Statt sofort alle Warengruppen gleichzeitig zu betrachten, schlage ich vor, mit einer Kategorie zu starten – zum Beispiel Süßwaren/Schokolade.
+	•	In dieser Kategorie können wir die Sonderfälle und Ausnahmen gezielt durchgehen und Regeln definieren.
+	•	Sobald die Logik dort funktioniert, lässt sie sich Schritt für Schritt auf andere Kategorien übertragen.
 
 ⸻
 
-📌 Warum mehrere Marken in einem Verbund landen können
-	•	Regionale Unterschiede: In einer Region wird Rolli verkauft, in einer anderen Leibniz.
-	•	Sortimentsaktionen: Verschiedene Produkte einer Firma oder Kategorie laufen unter derselben Rabattaktion.
-	•	Kategorisierung: Mehrere Marken einer Warengruppe (z. B. Schokolade) werden als eine Position gezählt.
-	•	Fehlerhafte Aggregation: Zwei unterschiedliche Marken derselben Warengruppe werden versehentlich als ein Verbund behandelt.
-
-⸻
-
-📌 Offene Fragen & Brainstorming-Punkte
-	1.	Ab wann ist ein Misch-Verbund noch derselbe Artikel/Cluster, und ab wann müssen wir ihn als neue Einheit betrachten?
-	2.	Wie wollen wir Misch-Verbünde auswerten: nach Hauptartikel, als Mix-Kategorie oder gewichtet auf die einzelnen Marken?
-	3.	Bei vielen Marken (≥ 4): lieber Kategorie-Ebene („Bier-Mix“) oder detaillierte Splits?
-	4.	Wollen wir NMDAX konsequent als metrischen Wert nutzen (statt A/B/C-Klassen), um genauere Analysen zu ermöglichen?
-	5.	Brauchen wir ein Mapping/Wörterbuch, um die Vielfalt der Namen zu reduzieren? Wer würde dieses pflegen, und in welchem Rhythmus?
-	6.	Wie sieht eine pragmatische Lösung kurzfristig aus (einfache Regeln) und welche langfristigen Ansätze (z. B. ML, Clustering, Wörterbuch) sind denkbar?
-
-⸻
-
-Хочешь, я соберу это завтра ещё в версию, которую можно прям «зачитать» как вводное слово (более связный текст, меньше Stichpunkte)?
+Хочешь, я сделаю это ещё в короткой E-Mail-Form (2–3 Absätze), так чтобы можно было Аннет сразу написать как Status-Update?
