@@ -1,1 +1,50 @@
 
+Супер, давай соберём всё в удобный список 👍. Это как раз и будет твой Problem Statement + Brainstorming-Agenda для встречи с Annett (и, возможно, Норбертом).
+
+⸻
+
+📌 Einführung & aktueller Stand
+	•	Unterschied Netto vs. Edeka:
+	•	Edeka → jedes Werbeplatz = 1 klar definierter Artikel/Cluster (z. B. „Milka 80–100g“). → leicht messbar.
+	•	Netto → 1 Werbeplatz = 1 Verbund mit 1–10 Artikeln, Zusammensetzung ändert sich → schwer vergleichbar über Zeit.
+	•	Ziel: herausfinden, wie viele A-Artikel im Prospekt (insbesondere auf der Titelseite) wirklich den Abstrahleffekt/Synergie erzeugen und wo eine Sättigungsgrenze liegt (z. B. bei 4–6 Artikeln).
+	•	Klassische ABC-Analyse (A > 500, B 400–500 …) ist pragmatisch, aber willkürlich.
+👉 Für präzisere Analysen sinnvoller, den Score NMDAX direkt als metrischen Wert zu nutzen (nicht nur A/B/C).
+
+⸻
+
+📌 Hypothesen & Ansätze
+	•	Ein Verbund = 1 Werbeplatz, daher bei Zählungen von A-Artikel pro Prospekt zählt er als 1 Einheit.
+	•	Für die inhaltliche Analyse:
+	•	Hauptartikel-Logik: Verbundname = Artikel mit höchstem Umsatz/NMDAX.
+	•	Mix-Logik: wenn mehrere Marken vergleichbar stark → „Bier-Mix“, „Schoko-Mix“ etc.
+	•	Gewichtete Anteile: NMDAX jedes Verbunds proportional auf beteiligte Marken verteilt → so kann man später Rolli vs. Leibniz getrennt analysieren.
+	•	Bei Misch-Verbünden mit ≥3 Marken:
+	•	Wenn 2 Marken → gewichtet oder Mix.
+	•	Wenn 3 Marken → evtl. Mix oder gewichtete Zuweisung an alle drei.
+	•	Wenn 4–5 Marken (z. B. Bier, Softdrinks) → eher Kategorie („Bier-Mix“, „Cola/Fanta/Sprite“).
+	•	Misch-Verbund kann pragmatisch als durchschnittlich/gewichteter Artikel behandelt werden → so bleibt er als 1 Werbeplatz zählbar, aber Markenbeiträge können analysiert werden.
+
+⸻
+
+📌 Offene Fragen & Brainstorming-Punkte
+	1.	Ab wann gilt ein Misch-Verbund noch als derselbe Artikel/Cluster?
+	•	Wenn nur Sortenunterschiede (Milka 80g Haselnuss vs. Erdbeer) → ja.
+	•	Wenn völlig andere Marken (Rolli vs. Leibniz) → fraglich.
+	2.	Wie gehen wir mit Misch-Verbünden um?
+	•	Hauptartikel nach Umsatz?
+	•	Mix-Kategorie?
+	•	Gewichtete Splits pro Marke?
+	3.	Bei vielen Marken (≥4):
+	•	Lieber alles in eine Kategorie („Bier-Mix“)?
+	•	Oder trotzdem nach Marken aufsplitten?
+	4.	Datenfrage:
+	•	Wollen wir den NMDAX als kontinuierlichen Wert nutzen (statt A/B/C-Klassen)?
+	•	Brauchen wir evtl. ein Mapping/Wörterbuch, um die Namensvielfalt zu reduzieren?
+	5.	Pragmatische Kurzfrist-Lösung vs. langfristiger Ansatz:
+	•	Kurzfristig einfache Regeln (Hauptartikel/Mix).
+	•	Langfristig evtl. ML/Clustering oder Wörterbuch, das regelmäßig gepflegt wird.
+
+⸻
+
+Хочешь, я сразу переведу это всё в немецкий Stichpunkt-Stil (so wie du es morgen direkt als Einstieg im Meeting sagen kannst)?
