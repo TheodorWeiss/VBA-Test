@@ -1,14 +1,22 @@
-Hallo Heiko, hallo Norbert,
+Вот обновлённый черновик письма Хайко — с корректировкой по Süßwaren (логика уже сделана и тестировалась) и аккуратной zeitlichen Einschätzung:
 
-anbei sende ich die Auswertung zur Überprüfung der OG-Werbung der letzten 12 Wochen.
-Die durchschnittliche Wiederholungsquote liegt bei rund 22 %, was bedeutet, dass ein Artikel im Schnitt etwa alle fünf Wochen erneut in der Werbung erscheint.
+⸻
 
-Ergebnisse im Überblick:
-	•	Die höchste Wiederholungsquote zeigen Basisartikel wie Bananen, Gurken und Himbeeren, die nahezu wöchentlich beworben werden.
-	•	Die Themenblöcke wechseln regelmäßig (z. B. „Promo Beeren“, „Team D“, „Bio Aktion“),
-jedoch bleiben die Regionen fast immer identisch, was auf eine stabile regionale Planung hinweist.
-	•	Einzelne Artikel mit konstant hoher Quote lassen auf eine permanente Grundpräsenz im OG-Sortiment schließen.
+Betreff: Austausch mit EDEKA – Status & nächster Schritt
 
-Fazit zur Hypothese:
-Die Analyse bestätigt die Annahme, dass es mehrfache Wiederholungen identischer Artikel in kurzen Abständen gibt.
-Eine stärkere Rotation oder saisonale Steuerung könnte künftig zur Erhöhung der Themenvielfalt beitragen.
+Hallo Herr Kordmann,
+
+ja, gestern fand der Austausch mit EDEKA statt – Frau Franßen und Norbert waren beide dabei. Wir haben den aktuellen Stand besprochen und uns auf eine pragmatische Logik zur Bestimmung des Hauptartikels je Werbeverbund sowie zum Umgang mit Sonderfällen (große/misch-Verbünde, >3 Marken bzw. >20 Artikel; getrennte Behandlung von „% auf Marke“) verständigt.
+
+Status:
+Die Logik wurde in der Warengruppe Süßwaren bereits umgesetzt und getestet; die Ergebnisse sind konsistent. Derzeit läuft noch ein Feintuning (Benennung/Zuordnung, Edge Cases). Ein konsolidierter Zwischenstand für Süßwaren ist für nächste Woche geplant.
+
+Weiteres Vorgehen:
+Nach dem Feinschliff in Süßwaren folgt der schrittweise Rollout auf weitere Warengruppen, inkl. fester Artikelnummern-Zuordnung pro Verbund und Vorbereitung der aktualisierten A/B/C-Klassifizierung (Basis 2024+2025). Ziel ist eine stabile Vergleichbarkeit Netto/EDEKA und vereinfachte Auswertungen zum Abstrahleffekt.
+
+Viele Grüße
+Theo Weiß
+
+⸻
+
+Если хочешь, сделаю ещё короче (на 4–5 предложений) для отправки прямо в ответе на тред.
