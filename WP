@@ -1,1 +1,8 @@
-qu
+let
+    Source = AnalysisServices.Database(
+        "EDW-SERVER\INSTANCE",           // из Data Source=
+        "HAP-NDW-AS-VerkaufsdatenControlling", // из Initial Catalog=
+        [Query = "/* сюда весь MDX-текст */"]
+    )
+in
+    Source
