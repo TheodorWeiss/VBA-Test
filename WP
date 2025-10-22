@@ -1,19 +1,24 @@
-=MAX(
- WENN(ISTZAHL(WENNFEHLER(WERT(TEIL(B2;ZEILE(INDIREKT("1:"&LÄNGE(B2)));1));""));
-     ZEILE(INDIREKT("1:"&LÄNGE(B2)));
-     0)
-)
-=MAX(
- WENN( ZEILE(INDIREKT("1:"&R))<=R;
-      WENN( ODER(
-           ISTZAHL(WENNFEHLER(WERT(TEIL(B2;ZEILE(INDIREKT("1:"&LÄNGE(B2)));1));""));
-           TEIL(B2;ZEILE(INDIREKT("1:"&LÄNGE(B2)));1)="x";
-           TEIL(B2;ZEILE(INDIREKT("1:"&LÄNGE(B2)));1)="X";
-           TEIL(B2;ZEILE(INDIREKT("1:"&LÄNGE(B2)));1)=","
-         );
-         0;
-         ZEILE(INDIREKT("1:"&LÄNGE(B2)))
-      );
-      0
- )
-)
+Вот вариант короткого, уверенного и профессионально звучащего выступления для твоей встречи с Аннетт и Норбертом — можно читать буквально с листа (около 1 минуты):
+
+⸻
+
+„Kurzüberblick zur A-Artikel-Analyse“
+
+Ich habe die A-Artikel-Analyse für das gesamte Sortiment fertiggestellt.
+Dabei habe ich alle Ausreißer aus dem Datensatz entfernt – also vor allem Werbeseiten, die thematisch nicht relevant waren, sowie Verbünde mit einer zu großen Anzahl an Artikeln.
+
+Für die Bewertung habe ich den gewichteten NM-DAX-Index verwendet, um die tatsächliche Performance der Artikel realistischer abzubilden.
+
+Eine Besonderheit der Liste ist, dass die A-Artikel nicht immer direkt hintereinander stehen.
+Ich habe mich dabei bewusst nicht rein mechanisch an die Zahlen gehalten, sondern zusätzlich qualitative Faktoren berücksichtigt – zum Beispiel die Saisonalität.
+Saisonprodukte habe ich also nicht automatisch als A-Artikel klassifiziert, wenn sie nur kurzfristig hohe Werte hatten.
+
+Außerdem fehlen hier Marken wie Haribo und Kinder, weil deren Aktionen in der Regel auf den gesamten Markenauftritt bezogen sind und nicht auf einzelne SKUs – diese sind daher schwer vergleichbar mit den anderen Artikeln.
+
+⸻
+
+Хочешь, я добавлю короткое вступление (1–2 предложения), чтобы начать чуть теплее, например:
+
+„Ich würde Ihnen heute gern die aktuelle Version der A-Artikel-Analyse zeigen und kurz erläutern, nach welchen Kriterien ich vorgegangen bin.“
+
+или предпочитаешь сразу переходить к сути, без вступления?
