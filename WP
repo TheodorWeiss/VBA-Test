@@ -5,19 +5,29 @@
    $B2;
    "");
 ""))
-
 =WENN($B2="";"";WENNFEHLER(
-   WENN(ODER(
-      ISTZAHL(SUCHEN(TEXT($D2;"0");
-         INDEX($M$2:$M$100;VERGLEICH($B2;$K$2:$K$100;0))
-      ));
-      ISTZAHL(SUCHEN(TEXT($D2/1000;"0,###");
-         INDEX($M$2:$M$100;VERGLEICH($B2;$K$2:$K$100;0))
-      ));
-      ISTZAHL(SUCHEN(WECHSELN(TEXT($D2/1000;"0,###");",";".");
-         INDEX($M$2:$M$100;VERGLEICH($B2;$K$2:$K$100;0))
-      ))
+ WENN(
+   ODER(
+     ISTZAHL(SUCHEN(TEXT($D2;"0");
+       INDEX($M$2:$M$100;VERGLEICH(WAHR;$K$2:$K$100&""=$B2&"";0))
+     ));
+     UND(REST($D2;1000)=0;                                  /* делится на 1000 без остатка -> целое */
+         ISTZAHL(SUCHEN(TEXT($D2/1000;"0");
+           INDEX($M$2:$M$100;VERGLEICH(WAHR;$K$2:$K$100&""=$B2&"";0))
+         ))
+     );
+     UND(REST($D2;1000)<>0;                                 /* нецелое -> искать 0,xxx и 0.xxx */
+         ODER(
+           ISTZAHL(SUCHEN(TEXT($D2/1000;"0,###");
+             INDEX($M$2:$M$100;VERGLEICH(WAHR;$K$2:$K$100&""=$B2&"";0))
+           ));
+           ISTZAHL(SUCHEN(WECHSELN(TEXT($D2/1000;"0,###");",";".");
+             INDEX($M$2:$M$100;VERGLEICH(WAHR;$K$2:$K$100&""=$B2&"";0))
+           ))
+         )
+     )
    );
    $B2;
-   "");
+   ""
+ );
 ""))
