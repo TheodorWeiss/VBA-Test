@@ -5,3 +5,19 @@
    $B2;
    "");
 ""))
+
+=WENN($B2="";"";WENNFEHLER(
+   WENN(ODER(
+      ISTZAHL(SUCHEN(TEXT($D2;"0");
+         INDEX($M$2:$M$100;VERGLEICH($B2;$K$2:$K$100;0))
+      ));
+      ISTZAHL(SUCHEN(TEXT($D2/1000;"0,###");
+         INDEX($M$2:$M$100;VERGLEICH($B2;$K$2:$K$100;0))
+      ));
+      ISTZAHL(SUCHEN(WECHSELN(TEXT($D2/1000;"0,###");",";".");
+         INDEX($M$2:$M$100;VERGLEICH($B2;$K$2:$K$100;0))
+      ))
+   );
+   $B2;
+   "");
+""))
