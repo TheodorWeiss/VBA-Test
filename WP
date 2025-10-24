@@ -1,55 +1,7 @@
-Function Levenshtein(s As String, t As String) As Double
-    Dim m As Long, n As Long
-    Dim i As Long, j As Long
-    Dim cost As Long
-    Dim d() As Long
-    
-    m = Len(s)
-    n = Len(t)
-    
-    If m = 0 Then
-        Levenshtein = n
-        Exit Function
-    End If
-    If n = 0 Then
-        Levenshtein = m
-        Exit Function
-    End If
-    
-    ReDim d(0 To m, 0 To n)
-    
-    For i = 0 To m
-        d(i, 0) = i
-    Next i
-    For j = 0 To n
-        d(0, j) = j
-    Next j
-    
-    For i = 1 To m
-        For j = 1 To n
-            If Mid(s, i, 1) = Mid(t, j, 1) Then
-                cost = 0
-            Else
-                cost = 1
-            End If
-            d(i, j) = WorksheetFunction.Min( _
-                WorksheetFunction.Min(d(i - 1, j) + 1, d(i, j - 1) + 1), _
-                d(i - 1, j - 1) + cost)
-        Next j
-    Next i
-    
-    Levenshtein = d(m, n)
-End Function
-
-Function StringSimilarity(s As String, t As String) As Double
-    Dim dist As Double
-    Dim maxLen As Double
-    
-    maxLen = WorksheetFunction.Max(Len(s), Len(t))
-    If maxLen = 0 Then
-        StringSimilarity = 1
-    Else
-        dist = Levenshtein(s, t)
-        StringSimilarity = 1 - (dist / maxLen)
-    End If
-End Function
+=WENN($B2="";"";WENNFEHLER(
+   WENN(ISTZAHL(SUCHEN(" "&TEXT($D2;"0");
+        INDEX($M$2:$M$100;VERGLEICH($B2;$K$2:$K$100;0))
+   ));
+   $B2;
+   "");
+""))
