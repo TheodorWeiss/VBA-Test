@@ -1,33 +1,174 @@
-=WENN($B2="";"";WENNFEHLER(
-   WENN(ISTZAHL(SUCHEN(" "&TEXT($D2;"0");
-        INDEX($M$2:$M$100;VERGLEICH($B2;$K$2:$K$100;0))
-   ));
-   $B2;
-   "");
-""))
-=WENN($B2="";"";WENNFEHLER(
- WENN(
-   ODER(
-     ISTZAHL(SUCHEN(TEXT($D2;"0");
-       INDEX($M$2:$M$100;VERGLEICH(WAHR;$K$2:$K$100&""=$B2&"";0))
-     ));
-     UND(REST($D2;1000)=0;                                  /* делится на 1000 без остатка -> целое */
-         ISTZAHL(SUCHEN(TEXT($D2/1000;"0");
-           INDEX($M$2:$M$100;VERGLEICH(WAHR;$K$2:$K$100&""=$B2&"";0))
-         ))
-     );
-     UND(REST($D2;1000)<>0;                                 /* нецелое -> искать 0,xxx и 0.xxx */
-         ODER(
-           ISTZAHL(SUCHEN(TEXT($D2/1000;"0,###");
-             INDEX($M$2:$M$100;VERGLEICH(WAHR;$K$2:$K$100&""=$B2&"";0))
-           ));
-           ISTZAHL(SUCHEN(WECHSELN(TEXT($D2/1000;"0,###");",";".");
-             INDEX($M$2:$M$100;VERGLEICH(WAHR;$K$2:$K$100&""=$B2&"";0))
-           ))
-         )
-     )
-   );
-   $B2;
-   ""
- );
-""))
+Option Explicit
+
+Public Sub Clean_Po_Test()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("Po_test")
+    
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    
+    '----- 1) удалить строки с пустым A (Rang)
+    Dim r As Long
+    For r = lastRow To 2 Step -1
+        If Trim(CStr(ws.Cells(r, "A").Value)) = "" Then
+            ws.Rows(r).Delete
+        End If
+    Next r
+    
+    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    If lastRow < 2 Then GoTo TidyExit
+    
+    '----- 2) перенумерация Rang -> 1..N без дыр (набор уникальных значений A)
+    Dim dictVals As Object, dictMap As Object
+    Set dictVals = CreateObject("Scripting.Dictionary")
+    Set dictMap = CreateObject("Scripting.Dictionary")
+    
+    Dim v As Variant
+    For r = 2 To lastRow
+        v = ws.Cells(r, "A").Value
+        If IsNumeric(v) Then
+            If Not dictVals.Exists(CLng(v)) Then dictVals.Add CLng(v), CLng(v)
+        End If
+    Next r
+    
+    If dictVals.Count > 0 Then
+        Dim keys As Variant, i As Long
+        keys = dictVals.Keys
+        Call SortVariantArray(keys)             'по возрастанию
+        For i = LBound(keys) To UBound(keys)
+            dictMap(keys(i)) = i + 1            'old -> new
+        Next i
+        
+        For r = 2 To lastRow
+            v = ws.Cells(r, "A").Value
+            If IsNumeric(v) Then ws.Cells(r, "A").Value = dictMap(CLng(v))
+        Next r
+    End If
+    
+    '----- 3) фильтр по G: удалить G<40%; если у Rang все <40, оставить одну и очистить D:G
+    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    
+    Dim dictRowsByRank As Object, dictHasKeep As Object
+    Set dictRowsByRank = CreateObject("Scripting.Dictionary")
+    Set dictHasKeep = CreateObject("Scripting.Dictionary")
+    
+    Dim p As Variant, rank As Long
+    Dim willDelete() As Boolean, markClearDEFG() As Boolean
+    ReDim willDelete(1 To lastRow)
+    ReDim markClearDEFG(1 To lastRow)
+    
+    'первый проход — собираем группы и помечаем, что у ранга есть «хорошие/пустые» строки
+    For r = 2 To lastRow
+        rank = CLng(ws.Cells(r, "A").Value)
+        If Not dictRowsByRank.Exists(rank) Then dictRowsByRank.Add rank, CreateObject("System.Collections.ArrayList")
+        dictRowsByRank(rank).Add r
+        
+        p = PercentToNumber(ws.Cells(r, "G").Value)  'Variant: Null если пусто
+        If IsNull(p) Then
+            'пустые G — принимаем как строки, которые можно оставлять
+            dictHasKeep(rank) = True
+        ElseIf p >= 40 Then
+            dictHasKeep(rank) = True
+        Else
+            willDelete(r) = True                      'кандидат на удаление (<40)
+        End If
+    Next r
+    
+    'второй проход — если у ранга нет ни одной «оставляемой» строки, то одну сохраняем и чистим D:G
+    Dim arrRows As Object, firstRow As Long
+    For Each v In dictRowsByRank.Keys
+        rank = CLng(v)
+        If Not dictHasKeep.Exists(rank) Then
+            Set arrRows = dictRowsByRank(rank)
+            If arrRows.Count > 0 Then
+                firstRow = CLng(arrRows.Item(0))
+                willDelete(firstRow) = False       'эту не удаляем
+                markClearDEFG(firstRow) = True     'но очищаем D:E:F:G
+                'остальные строки ранга удаляем (они все <40)
+                Dim idx As Long, rr As Long
+                For idx = 1 To arrRows.Count - 1
+                    rr = CLng(arrRows.Item(idx))
+                    willDelete(rr) = True
+                Next idx
+            End If
+        End If
+    Next v
+    
+    'очистить D:E:F:G там, где помечено
+    For r = 2 To lastRow
+        If markClearDEFG(r) Then
+            ws.Range("D" & r & ":G" & r).ClearContents
+        End If
+    Next r
+    
+    'удалить помеченные строки снизу вверх
+    For r = lastRow To 2 Step -1
+        If willDelete(r) Then ws.Rows(r).Delete
+    Next r
+    
+    '----- 4) заполнить пустые H = "PromotionPrice"
+    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    For r = 2 To lastRow
+        If Trim(CStr(ws.Cells(r, "H").Value)) = "" Then
+            ws.Cells(r, "H").Value = "PromotionPrice"
+        End If
+    Next r
+    
+TidyExit:
+    Application.Calculation = xlCalculationAutomatic
+    Application.ScreenUpdating = True
+End Sub
+
+'--- Преобразование G в число процентов (Double в интервале 0..100), Null если пусто
+Private Function PercentToNumber(valIn As Variant) As Variant
+    Dim s As String, d As Double
+    If IsEmpty(valIn) Or IsNull(valIn) Then
+        PercentToNumber = Null
+        Exit Function
+    End If
+    
+    If IsNumeric(valIn) Then
+        d = CDbl(valIn)
+        If d <= 1 And d >= 0 Then
+            PercentToNumber = d * 100#
+        Else
+            PercentToNumber = d
+        End If
+        Exit Function
+    End If
+    
+    s = CStr(valIn)
+    s = Replace(s, "%", "")
+    s = Replace(s, " ", "")
+    s = Replace(s, Chr(160), "")           'неразрывный пробел
+    s = Replace(s, ".", ",")               'на случай точек
+    If s = "" Then
+        PercentToNumber = Null
+        Exit Function
+    End If
+    
+    On Error GoTo ParseFail
+    d = CDbl(Replace(s, ",", Application.DecimalSeparator))
+    If d <= 1 And d >= 0 Then d = d * 100#
+    PercentToNumber = d
+    Exit Function
+ParseFail:
+    PercentToNumber = Null
+End Function
+
+'--- простой сортировщик Variant-массива по возрастанию
+Private Sub SortVariantArray(ByRef arr As Variant)
+    Dim i As Long, j As Long, tmp As Variant
+    For i = LBound(arr) To UBound(arr) - 1
+        For j = i + 1 To UBound(arr)
+            If CDbl(arr(j)) < CDbl(arr(i)) Then
+                tmp = arr(i)
+                arr(i) = arr(j)
+                arr(j) = tmp
+            End If
+        Next j
+    Next i
+End Sub
