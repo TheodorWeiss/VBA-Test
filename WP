@@ -3,29 +3,28 @@ Option Explicit
 Public Sub Clean_Po_Test()
     Dim ws As Worksheet
     Set ws = ThisWorkbook.Worksheets("Po_test")
-    
+
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
-    
-    Dim lastRow As Long
+
+    Dim lastRow As Long, r As Long
     lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
-    
+
     '----- 1) удалить строки с пустым A (Rang)
-    Dim r As Long
     For r = lastRow To 2 Step -1
         If Trim(CStr(ws.Cells(r, "A").Value)) = "" Then
             ws.Rows(r).Delete
         End If
     Next r
-    
+
     lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
     If lastRow < 2 Then GoTo TidyExit
-    
-    '----- 2) перенумерация Rang -> 1..N без дыр (набор уникальных значений A)
+
+    '----- 2) Перенумерация Rang -> 1..N по множеству уникальных A
     Dim dictVals As Object, dictMap As Object
     Set dictVals = CreateObject("Scripting.Dictionary")
     Set dictMap = CreateObject("Scripting.Dictionary")
-    
+
     Dim v As Variant
     For r = 2 To lastRow
         v = ws.Cells(r, "A").Value
@@ -33,141 +32,133 @@ Public Sub Clean_Po_Test()
             If Not dictVals.Exists(CLng(v)) Then dictVals.Add CLng(v), CLng(v)
         End If
     Next r
-    
+
     If dictVals.Count > 0 Then
         Dim keys As Variant, i As Long
         keys = dictVals.Keys
-        Call SortVariantArray(keys)             'по возрастанию
+        SortVariantArray keys
         For i = LBound(keys) To UBound(keys)
-            dictMap(keys(i)) = i + 1            'old -> new
+            dictMap(keys(i)) = i + 1
         Next i
-        
         For r = 2 To lastRow
             v = ws.Cells(r, "A").Value
             If IsNumeric(v) Then ws.Cells(r, "A").Value = dictMap(CLng(v))
         Next r
     End If
-    
-    '----- 3) фильтр по G: удалить G<40%; если у Rang все <40, оставить одну и очистить D:G
+
+    '----- 3) Фильтр по G: удалить G<40%; если у Rang все <40 — оставить одну и очистить D:G
     lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
-    
+
     Dim dictRowsByRank As Object, dictHasKeep As Object
-    Set dictRowsByRank = CreateObject("Scripting.Dictionary")
-    Set dictHasKeep = CreateObject("Scripting.Dictionary")
-    
-    Dim p As Variant, rank As Long
+    Set dictRowsByRank = CreateObject("Scripting.Dictionary") ' rank -> Collection of row numbers
+    Set dictHasKeep = CreateObject("Scripting.Dictionary")     ' rank -> True if есть (G пусто или >=40)
+
     Dim willDelete() As Boolean, markClearDEFG() As Boolean
     ReDim willDelete(1 To lastRow)
     ReDim markClearDEFG(1 To lastRow)
-    
-    'первый проход — собираем группы и помечаем, что у ранга есть «хорошие/пустые» строки
+
+    Dim rank As Long, p As Variant
+
+    ' собрать группы
     For r = 2 To lastRow
         rank = CLng(ws.Cells(r, "A").Value)
-        If Not dictRowsByRank.Exists(rank) Then dictRowsByRank.Add rank, CreateObject("System.Collections.ArrayList")
+        If Not dictRowsByRank.Exists(rank) Then
+            Dim col As Collection
+            Set col = New Collection
+            dictRowsByRank.Add rank, col
+        End If
         dictRowsByRank(rank).Add r
-        
-        p = PercentToNumber(ws.Cells(r, "G").Value)  'Variant: Null если пусто
+
+        p = PercentToNumber(ws.Cells(r, "G").Value)
         If IsNull(p) Then
-            'пустые G — принимаем как строки, которые можно оставлять
-            dictHasKeep(rank) = True
+            dictHasKeep(rank) = True              ' пустые G считаем «оставляемыми»
         ElseIf p >= 40 Then
             dictHasKeep(rank) = True
         Else
-            willDelete(r) = True                      'кандидат на удаление (<40)
+            willDelete(r) = True                  ' < 40 — кандидат на удаление
         End If
     Next r
-    
-    'второй проход — если у ранга нет ни одной «оставляемой» строки, то одну сохраняем и чистим D:G
-    Dim arrRows As Object, firstRow As Long
-    For Each v In dictRowsByRank.Keys
-        rank = CLng(v)
+
+    ' где все строки <40 — оставляем одну и чистим D:G
+    Dim k As Variant, firstRow As Long, idx As Long
+    For Each k In dictRowsByRank.Keys
+        rank = CLng(k)
         If Not dictHasKeep.Exists(rank) Then
-            Set arrRows = dictRowsByRank(rank)
-            If arrRows.Count > 0 Then
-                firstRow = CLng(arrRows.Item(0))
-                willDelete(firstRow) = False       'эту не удаляем
-                markClearDEFG(firstRow) = True     'но очищаем D:E:F:G
-                'остальные строки ранга удаляем (они все <40)
-                Dim idx As Long, rr As Long
-                For idx = 1 To arrRows.Count - 1
-                    rr = CLng(arrRows.Item(idx))
-                    willDelete(rr) = True
+            ' все строки у этого ранга были <40
+            If dictRowsByRank(rank).Count > 0 Then
+                firstRow = CLng(dictRowsByRank(rank).Item(1))
+                willDelete(firstRow) = False
+                markClearDEFG(firstRow) = True
+                ' остальные — удалить
+                For idx = 2 To dictRowsByRank(rank).Count
+                    willDelete(CLng(dictRowsByRank(rank).Item(idx))) = True
                 Next idx
             End If
         End If
-    Next v
-    
-    'очистить D:E:F:G там, где помечено
+    Next k
+
+    ' очистить D:G там, где нужно
     For r = 2 To lastRow
-        If markClearDEFG(r) Then
-            ws.Range("D" & r & ":G" & r).ClearContents
-        End If
+        If markClearDEFG(r) Then ws.Range("D" & r & ":G" & r).ClearContents
     Next r
-    
-    'удалить помеченные строки снизу вверх
+
+    ' удалить помеченные строки
     For r = lastRow To 2 Step -1
         If willDelete(r) Then ws.Rows(r).Delete
     Next r
-    
-    '----- 4) заполнить пустые H = "PromotionPrice"
+
+    '----- 4) Заполнить пустые H значением "PromotionPrice"
     lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
     For r = 2 To lastRow
         If Trim(CStr(ws.Cells(r, "H").Value)) = "" Then
             ws.Cells(r, "H").Value = "PromotionPrice"
         End If
     Next r
-    
+
 TidyExit:
     Application.Calculation = xlCalculationAutomatic
     Application.ScreenUpdating = True
 End Sub
 
-'--- Преобразование G в число процентов (Double в интервале 0..100), Null если пусто
+' Преобразование значения из G в число процентов (0..100). Возвращает Null, если пусто/не парсится
 Private Function PercentToNumber(valIn As Variant) As Variant
     Dim s As String, d As Double
     If IsEmpty(valIn) Or IsNull(valIn) Then
-        PercentToNumber = Null
-        Exit Function
+        PercentToNumber = Null: Exit Function
     End If
-    
+
     If IsNumeric(valIn) Then
         d = CDbl(valIn)
-        If d <= 1 And d >= 0 Then
-            PercentToNumber = d * 100#
-        Else
-            PercentToNumber = d
-        End If
+        If d >= 0 And d <= 1 Then d = d * 100#
+        PercentToNumber = d
         Exit Function
     End If
-    
+
     s = CStr(valIn)
     s = Replace(s, "%", "")
+    s = Replace(s, Chr(160), "")
     s = Replace(s, " ", "")
-    s = Replace(s, Chr(160), "")           'неразрывный пробел
-    s = Replace(s, ".", ",")               'на случай точек
-    If s = "" Then
-        PercentToNumber = Null
-        Exit Function
-    End If
-    
+    s = Replace(s, ".", Application.DecimalSeparator)
+    s = Replace(s, ",", Application.DecimalSeparator)
+
+    If s = "" Then PercentToNumber = Null: Exit Function
+
     On Error GoTo ParseFail
-    d = CDbl(Replace(s, ",", Application.DecimalSeparator))
-    If d <= 1 And d >= 0 Then d = d * 100#
+    d = CDbl(s)
+    If d >= 0 And d <= 1 Then d = d * 100#
     PercentToNumber = d
     Exit Function
 ParseFail:
     PercentToNumber = Null
 End Function
 
-'--- простой сортировщик Variant-массива по возрастанию
+' Сортировка Variant-массива по возрастанию (просто и без .NET)
 Private Sub SortVariantArray(ByRef arr As Variant)
-    Dim i As Long, j As Long, tmp As Variant
+    Dim i As Long, j As Long, t As Variant
     For i = LBound(arr) To UBound(arr) - 1
         For j = i + 1 To UBound(arr)
             If CDbl(arr(j)) < CDbl(arr(i)) Then
-                tmp = arr(i)
-                arr(i) = arr(j)
-                arr(j) = tmp
+                t = arr(i): arr(i) = arr(j): arr(j) = t
             End If
         Next j
     Next i
