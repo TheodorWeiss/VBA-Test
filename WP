@@ -1,165 +1,28 @@
-Option Explicit
+Вот вариант письма по-немецки — профессиональный, чёткий и с нужным акцентом на статистической состоятельности анализа:
 
-Public Sub Clean_Po_Test()
-    Dim ws As Worksheet
-    Set ws = ThisWorkbook.Worksheets("Po_test")
+⸻
 
-    Application.ScreenUpdating = False
-    Application.Calculation = xlCalculationManual
+Betreff: Aktualisierte Auswertung A-Artikel / Abstrahleffekt-Kurve
 
-    Dim lastRow As Long, r As Long
-    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+Hallo Herr Breindl, hallo Herr Kordmann,
 
-    '----- 1) удалить строки с пустым A (Rang)
-    For r = lastRow To 2 Step -1
-        If Trim(CStr(ws.Cells(r, "A").Value)) = "" Then
-            ws.Rows(r).Delete
-        End If
-    Next r
+ich habe die Analyse der A-Artikel und den Zusammenhang mit dem NMDax weiterentwickelt.
+Die neue Auswertung basiert auf geglätteten Werten (gleitender Durchschnitt) und berücksichtigt die jeweilige Anzahl der Beobachtungen pro Datenpunkt.
+Dadurch lassen sich Ausreißer und Verzerrungen durch kleine Stichproben weitgehend vermeiden.
 
-    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
-    If lastRow < 2 Then GoTo TidyExit
+Im Ergebnis zeigt sich ein klarer und logisch nachvollziehbarer Zusammenhang:
+Je mehr A-Artikel im Handzettel platziert sind, desto höher ist der durchschnittliche Werbeeffekt.
+Der zusätzliche Effekt eines weiteren A-Artikels liegt im Mittel bei rund +5 %, was aus meiner Sicht wesentlich plausibler ist als die sehr geringen Werte aus der EDEKA-Auswertung.
 
-    '----- 2) Перенумерация Rang -> 1..N по множеству уникальных A
-    Dim dictVals As Object, dictMap As Object
-    Set dictVals = CreateObject("Scripting.Dictionary")
-    Set dictMap = CreateObject("Scripting.Dictionary")
+Zum Vergleich habe ich außerdem die ungewichtete Kurve (reine Mittelwerte) beigefügt.
+Diese zeigt zwar eine ähnliche Form, ist aber aufgrund der geringen Beobachtungszahlen (siehe Tabelle) deutlich weniger verlässlich.
+Für strategische Entscheidungen würde ich daher den geglätteten Verlauf als Grundlage empfehlen und kleinere Abweichungen zwischen 1–3 A-Artikeln nicht überbewerten.
 
-    Dim v As Variant
-    For r = 2 To lastRow
-        v = ws.Cells(r, "A").Value
-        If IsNumeric(v) Then
-            If Not dictVals.Exists(CLng(v)) Then dictVals.Add CLng(v), CLng(v)
-        End If
-    Next r
+Viele Grüße
+Theodor Weiss
+Trainee Einkauf
+Netto Marken-Discount Stiftung & Co. KG
 
-    If dictVals.Count > 0 Then
-        Dim keys As Variant, i As Long
-        keys = dictVals.Keys
-        SortVariantArray keys
-        For i = LBound(keys) To UBound(keys)
-            dictMap(keys(i)) = i + 1
-        Next i
-        For r = 2 To lastRow
-            v = ws.Cells(r, "A").Value
-            If IsNumeric(v) Then ws.Cells(r, "A").Value = dictMap(CLng(v))
-        Next r
-    End If
+⸻
 
-    '----- 3) Фильтр по G: удалить G<40%; если у Rang все <40 — оставить одну и очистить D:G
-    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
-
-    Dim dictRowsByRank As Object, dictHasKeep As Object
-    Set dictRowsByRank = CreateObject("Scripting.Dictionary") ' rank -> Collection of row numbers
-    Set dictHasKeep = CreateObject("Scripting.Dictionary")     ' rank -> True if есть (G пусто или >=40)
-
-    Dim willDelete() As Boolean, markClearDEFG() As Boolean
-    ReDim willDelete(1 To lastRow)
-    ReDim markClearDEFG(1 To lastRow)
-
-    Dim rank As Long, p As Variant
-
-    ' собрать группы
-    For r = 2 To lastRow
-        rank = CLng(ws.Cells(r, "A").Value)
-        If Not dictRowsByRank.Exists(rank) Then
-            Dim col As Collection
-            Set col = New Collection
-            dictRowsByRank.Add rank, col
-        End If
-        dictRowsByRank(rank).Add r
-
-        p = PercentToNumber(ws.Cells(r, "G").Value)
-        If IsNull(p) Then
-            dictHasKeep(rank) = True              ' пустые G считаем «оставляемыми»
-        ElseIf p >= 40 Then
-            dictHasKeep(rank) = True
-        Else
-            willDelete(r) = True                  ' < 40 — кандидат на удаление
-        End If
-    Next r
-
-    ' где все строки <40 — оставляем одну и чистим D:G
-    Dim k As Variant, firstRow As Long, idx As Long
-    For Each k In dictRowsByRank.Keys
-        rank = CLng(k)
-        If Not dictHasKeep.Exists(rank) Then
-            ' все строки у этого ранга были <40
-            If dictRowsByRank(rank).Count > 0 Then
-                firstRow = CLng(dictRowsByRank(rank).Item(1))
-                willDelete(firstRow) = False
-                markClearDEFG(firstRow) = True
-                ' остальные — удалить
-                For idx = 2 To dictRowsByRank(rank).Count
-                    willDelete(CLng(dictRowsByRank(rank).Item(idx))) = True
-                Next idx
-            End If
-        End If
-    Next k
-
-    ' очистить D:G там, где нужно
-    For r = 2 To lastRow
-        If markClearDEFG(r) Then ws.Range("D" & r & ":G" & r).ClearContents
-    Next r
-
-    ' удалить помеченные строки
-    For r = lastRow To 2 Step -1
-        If willDelete(r) Then ws.Rows(r).Delete
-    Next r
-
-    '----- 4) Заполнить пустые H значением "PromotionPrice"
-    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
-    For r = 2 To lastRow
-        If Trim(CStr(ws.Cells(r, "H").Value)) = "" Then
-            ws.Cells(r, "H").Value = "PromotionPrice"
-        End If
-    Next r
-
-TidyExit:
-    Application.Calculation = xlCalculationAutomatic
-    Application.ScreenUpdating = True
-End Sub
-
-' Преобразование значения из G в число процентов (0..100). Возвращает Null, если пусто/не парсится
-Private Function PercentToNumber(valIn As Variant) As Variant
-    Dim s As String, d As Double
-    If IsEmpty(valIn) Or IsNull(valIn) Then
-        PercentToNumber = Null: Exit Function
-    End If
-
-    If IsNumeric(valIn) Then
-        d = CDbl(valIn)
-        If d >= 0 And d <= 1 Then d = d * 100#
-        PercentToNumber = d
-        Exit Function
-    End If
-
-    s = CStr(valIn)
-    s = Replace(s, "%", "")
-    s = Replace(s, Chr(160), "")
-    s = Replace(s, " ", "")
-    s = Replace(s, ".", Application.DecimalSeparator)
-    s = Replace(s, ",", Application.DecimalSeparator)
-
-    If s = "" Then PercentToNumber = Null: Exit Function
-
-    On Error GoTo ParseFail
-    d = CDbl(s)
-    If d >= 0 And d <= 1 Then d = d * 100#
-    PercentToNumber = d
-    Exit Function
-ParseFail:
-    PercentToNumber = Null
-End Function
-
-' Сортировка Variant-массива по возрастанию (просто и без .NET)
-Private Sub SortVariantArray(ByRef arr As Variant)
-    Dim i As Long, j As Long, t As Variant
-    For i = LBound(arr) To UBound(arr) - 1
-        For j = i + 1 To UBound(arr)
-            If CDbl(arr(j)) < CDbl(arr(i)) Then
-                t = arr(i): arr(i) = arr(j): arr(j) = t
-            End If
-        Next j
-    Next i
-End Sub
+Хочешь, я сделаю короткую, «лайт»-версию письма — если ты хочешь отправить её менее формально, просто как апдейт Норберту и Хайко (например, в стиле: „kurzes Update zur A-Artikel-Kurve“)?
