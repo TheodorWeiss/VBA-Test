@@ -10,7 +10,7 @@ Sub Copy_City_Blocks_As_Pictures()
     
     Set wsSrc = ThisWorkbook.Worksheets("Werbung_Reordered")
     
-    ' Last used row in column A
+    ' Last used row in column A on source sheet
     lastRow = wsSrc.Cells(wsSrc.Rows.Count, "A").End(xlUp).Row
     
     r = 1
@@ -21,18 +21,20 @@ Sub Copy_City_Blocks_As_Pictures()
             
             cityName = Trim(wsSrc.Cells(r, "A").Value)
             
-            ' Skip Ponholz
+            ' Skip Ponholz - no target tab for it
             If cityName <> "" And cityName <> "Ponholz" Then
                 
-                ' Determine block start (current row) and end (row before next city header)
+                ' Determine block start (current header row)
                 startRow = r
+                
+                ' Find the next city header to know where this block ends
                 nextR = r + 1
                 Do While nextR <= lastRow And Not IsCityHeader(wsSrc.Cells(nextR, "A"))
                     nextR = nextR + 1
                 Loop
                 endRow = nextR - 1
                 
-                ' Range A:F of this city block
+                ' Range A:F for this city block
                 Set rngBlock = wsSrc.Range("A" & startRow & ":F" & endRow)
                 
                 ' City sheet name = first two letters of city name
@@ -43,12 +45,12 @@ Sub Copy_City_Blocks_As_Pictures()
                 On Error GoTo 0
                 
                 If Not wsCity Is Nothing Then
-                    ' Copy range as picture and paste to target sheet near I4
+                    ' Copy as picture and paste on the city sheet
                     rngBlock.Copy
-                    
                     Set pic = wsCity.Pictures.Paste
+                    
                     With pic
-                        ' Position the picture with top-left corner at I4
+                        ' Place picture near I4 (top-left corner)
                         .Top = wsCity.Range("I4").Top
                         .Left = wsCity.Range("I4").Left
                     End With
@@ -57,7 +59,7 @@ Sub Copy_City_Blocks_As_Pictures()
                 Set wsCity = Nothing
                 Set rngBlock = Nothing
                 
-                ' Jump to next header row
+                ' Jump to row before next header (loop will add +1)
                 r = nextR - 1
             End If
         
@@ -69,14 +71,14 @@ Sub Copy_City_Blocks_As_Pictures()
 End Sub
 
 Function IsCityHeader(cell As Range) As Boolean
-    ' City header: non-empty cell in column A with a gray (or any non-default) background
+    ' City header: non-empty cell in column A with bigger bold font
     If cell.Column <> 1 Then
         IsCityHeader = False
     ElseIf Trim(cell.Value) = "" Then
         IsCityHeader = False
     Else
-        ' Check fill color – assume headers have a filled (e.g. gray) background
-        If cell.Interior.ColorIndex <> xlNone And cell.Interior.ColorIndex <> xlColorIndexNone Then
+        ' Adjust font size threshold if needed
+        If cell.Font.Bold = True And cell.Font.Size >= 12 Then
             IsCityHeader = True
         Else
             IsCityHeader = False
