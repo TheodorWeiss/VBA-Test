@@ -1,37 +1,3 @@
-Option Explicit
-
-' Search button: apply filter on Getränke sheet
-Private Sub cmdSearch_Click()
-    ApplyGetraenkeFilter Trim(Me.txtSearch.Text)
-End Sub
-
-' Copy button: copy visible rows (A:E) to clipboard
-Private Sub cmdCopy_Click()
-    Dim ws As Worksheet
-    Dim rng As Range
-    Dim rngVisible As Range
-    
-    Set ws = ThisWorkbook.Worksheets("Getränke")
-    Set rng = ws.Range("A1").CurrentRegion   ' table with headers in row 1
-    
-    On Error Resume Next
-    Set rngVisible = rng.SpecialCells(xlCellTypeVisible)
-    On Error GoTo 0
-    
-    If Not rngVisible Is Nothing Then
-        rngVisible.Columns("A:E").Copy
-    Else
-        MsgBox "Keine sichtbaren Zeilen zum Kopieren.", vbInformation
-    End If
-End Sub
-
-' Clear button: clear text and remove filter
-Private Sub cmdClear_Click()
-    Me.txtSearch.Text = ""
-    ApplyGetraenkeFilter ""
-End Sub
-
-' Local procedure: apply / clear filter on Getränke sheet
 Private Sub ApplyGetraenkeFilter(ByVal searchText As String)
     Dim ws As Worksheet
     Dim rng As Range
@@ -41,7 +7,7 @@ Private Sub ApplyGetraenkeFilter(ByVal searchText As String)
     Set rng = ws.Range("A1").CurrentRegion   ' whole table
     
     ' Ensure AutoFilter is enabled
-    If Not rng.AutoFilterMode Then
+    If Not ws.AutoFilterMode Then
         rng.AutoFilter
     End If
     
