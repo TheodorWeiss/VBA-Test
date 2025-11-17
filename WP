@@ -1,35 +1,35 @@
 Option Explicit
 
-' Apply filter when Search button is clicked
-Private Sub cmdSearch_Click()
-    ApplyGetraenkeFilter Trim(Me.txtSearch.Text)
+' Show the floating form
+Sub OpenGetraenkeSearchForm()
+    frmGetraenkeSearch.Show
 End Sub
 
-' Copy visible rows (A:E) when Copy button is clicked
-Private Sub cmdCopy_Click()
+' Apply filter on sheet "Getränke" by column B
+Sub ApplyGetraenkeFilter(ByVal searchText As String)
     Dim ws As Worksheet
     Dim rng As Range
-    Dim rngVisible As Range
+    Dim crit As String
     
     Set ws = ThisWorkbook.Worksheets("Getränke")
+    Set rng = ws.Range("A1").CurrentRegion   ' table with headers in row 1
     
-    ' Whole table based on A1
-    Set rng = ws.Range("A1").CurrentRegion
-    
-    On Error Resume Next
-    Set rngVisible = rng.SpecialCells(xlCellTypeVisible)
-    On Error GoTo 0
-    
-    If Not rngVisible Is Nothing Then
-        ' Copy only columns A:E of visible rows
-        rngVisible.Columns("A:E").Copy
-    Else
-        MsgBox "Nothing to copy – no visible rows.", vbInformation
+    ' Turn on AutoFilter if needed
+    If Not rng.AutoFilterMode Then
+        rng.AutoFilter
     End If
-End Sub
-
-' Clear search and show all data
-Private Sub cmdClear_Click()
-    Me.txtSearch.Text = ""
-    ApplyGetraenkeFilter ""
+    
+    If Len(searchText) = 0 Then
+        ' Clear filter
+        On Error Resume Next
+        ws.ShowAllData
+        On Error GoTo 0
+    Else
+        ' Convert "Radeberger Pils 20x500"
+        ' to "*Radeberger*Pils*20x500*"
+        crit = "*" & Replace(searchText, " ", "*") & "*"
+        
+        ' Column B is field 2
+        rng.AutoFilter Field:=2, Criteria1:=crit
+    End If
 End Sub
