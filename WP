@@ -1,87 +1,35 @@
-Sub Copy_City_Blocks_As_Pictures()
+Option Explicit
 
-    Dim wsSrc As Worksheet
-    Dim wsCity As Worksheet
-    Dim lastRow As Long
-    Dim r As Long, startRow As Long, endRow As Long, nextR As Long
-    Dim cityName As String, cityCode As String
-    Dim rngBlock As Range
-    Dim pic As Picture
-    
-    Set wsSrc = ThisWorkbook.Worksheets("Werbung_Reordered")
-    
-    ' Last used row in column A on source sheet
-    lastRow = wsSrc.Cells(wsSrc.Rows.Count, "A").End(xlUp).Row
-    
-    r = 1
-    Do While r <= lastRow
-        
-        ' Check if this row is a city header
-        If IsCityHeader(wsSrc.Cells(r, "A")) Then
-            
-            cityName = Trim(wsSrc.Cells(r, "A").Value)
-            
-            ' Skip Ponholz - no target tab for it
-            If cityName <> "" And cityName <> "Ponholz" Then
-                
-                ' Determine block start (current header row)
-                startRow = r
-                
-                ' Find the next city header to know where this block ends
-                nextR = r + 1
-                Do While nextR <= lastRow And Not IsCityHeader(wsSrc.Cells(nextR, "A"))
-                    nextR = nextR + 1
-                Loop
-                endRow = nextR - 1
-                
-                ' Range A:F for this city block
-                Set rngBlock = wsSrc.Range("A" & startRow & ":F" & endRow)
-                
-                ' City sheet name = first two letters of city name
-                cityCode = Left(cityName, 2)
-                
-                On Error Resume Next
-                Set wsCity = ThisWorkbook.Worksheets(cityCode)
-                On Error GoTo 0
-                
-                If Not wsCity Is Nothing Then
-                    ' Copy as picture and paste on the city sheet
-                    rngBlock.Copy
-                    Set pic = wsCity.Pictures.Paste
-                    
-                    With pic
-                        ' Place picture near I4 (top-left corner)
-                        .Top = wsCity.Range("I4").Top
-                        .Left = wsCity.Range("I4").Left
-                    End With
-                End If
-                
-                Set wsCity = Nothing
-                Set rngBlock = Nothing
-                
-                ' Jump to row before next header (loop will add +1)
-                r = nextR - 1
-            End If
-        
-        End If
-        
-        r = r + 1
-    Loop
-    
+' Apply filter when Search button is clicked
+Private Sub cmdSearch_Click()
+    ApplyGetraenkeFilter Trim(Me.txtSearch.Text)
 End Sub
 
-Function IsCityHeader(cell As Range) As Boolean
-    ' City header: non-empty cell in column A with bigger bold font
-    If cell.Column <> 1 Then
-        IsCityHeader = False
-    ElseIf Trim(cell.Value) = "" Then
-        IsCityHeader = False
+' Copy visible rows (A:E) when Copy button is clicked
+Private Sub cmdCopy_Click()
+    Dim ws As Worksheet
+    Dim rng As Range
+    Dim rngVisible As Range
+    
+    Set ws = ThisWorkbook.Worksheets("Getränke")
+    
+    ' Whole table based on A1
+    Set rng = ws.Range("A1").CurrentRegion
+    
+    On Error Resume Next
+    Set rngVisible = rng.SpecialCells(xlCellTypeVisible)
+    On Error GoTo 0
+    
+    If Not rngVisible Is Nothing Then
+        ' Copy only columns A:E of visible rows
+        rngVisible.Columns("A:E").Copy
     Else
-        ' Adjust font size threshold if needed
-        If cell.Font.Bold = True And cell.Font.Size >= 12 Then
-            IsCityHeader = True
-        Else
-            IsCityHeader = False
-        End If
+        MsgBox "Nothing to copy – no visible rows.", vbInformation
     End If
-End Function
+End Sub
+
+' Clear search and show all data
+Private Sub cmdClear_Click()
+    Me.txtSearch.Text = ""
+    ApplyGetraenkeFilter ""
+End Sub
