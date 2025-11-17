@@ -1,20 +1,46 @@
 Option Explicit
 
-' Show the floating form
-Sub OpenGetraenkeSearchForm()
-    frmGetraenkeSearch.Show
+' Search button: apply filter on Getränke sheet
+Private Sub cmdSearch_Click()
+    ApplyGetraenkeFilter Trim(Me.txtSearch.Text)
 End Sub
 
-' Apply filter on sheet "Getränke" by column B
-Sub ApplyGetraenkeFilter(ByVal searchText As String)
+' Copy button: copy visible rows (A:E) to clipboard
+Private Sub cmdCopy_Click()
+    Dim ws As Worksheet
+    Dim rng As Range
+    Dim rngVisible As Range
+    
+    Set ws = ThisWorkbook.Worksheets("Getränke")
+    Set rng = ws.Range("A1").CurrentRegion   ' table with headers in row 1
+    
+    On Error Resume Next
+    Set rngVisible = rng.SpecialCells(xlCellTypeVisible)
+    On Error GoTo 0
+    
+    If Not rngVisible Is Nothing Then
+        rngVisible.Columns("A:E").Copy
+    Else
+        MsgBox "Keine sichtbaren Zeilen zum Kopieren.", vbInformation
+    End If
+End Sub
+
+' Clear button: clear text and remove filter
+Private Sub cmdClear_Click()
+    Me.txtSearch.Text = ""
+    ApplyGetraenkeFilter ""
+End Sub
+
+' Local procedure: apply / clear filter on Getränke sheet
+Private Sub ApplyGetraenkeFilter(ByVal searchText As String)
     Dim ws As Worksheet
     Dim rng As Range
     Dim crit As String
     
     Set ws = ThisWorkbook.Worksheets("Getränke")
-    Set rng = ws.Range("A1").CurrentRegion   ' table with headers in row 1
+    Set rng = ws.Range("A1").CurrentRegion   ' whole table
     
-    ' Turn on AutoFilter if needed
+    ' Ensure AutoFilter is enabled
     If Not rng.AutoFilterMode Then
         rng.AutoFilter
     End If
@@ -25,11 +51,11 @@ Sub ApplyGetraenkeFilter(ByVal searchText As String)
         ws.ShowAllData
         On Error GoTo 0
     Else
-        ' Convert "Radeberger Pils 20x500"
-        ' to "*Radeberger*Pils*20x500*"
+        ' Turn "Radeberger Pils 20x500"
+        ' into "*Radeberger*Pils*20x500*"
         crit = "*" & Replace(searchText, " ", "*") & "*"
         
-        ' Column B is field 2
+        ' Filter by column B (field 2)
         rng.AutoFilter Field:=2, Criteria1:=crit
     End If
 End Sub
