@@ -1,27 +1,79 @@
-Private Sub ApplyGetraenkeFilter(ByVal searchText As String)
+Круто, что фильтр заработал 🙌 Давай доделаем три штуки:
+	1.	Copy → копирует все видимые строки A:E, без заголовка.
+	2.	Enter в поле поиска сразу запускает фильтр.
+	3.	Форма не блокирует Excel (modeless).
+
+⸻
+
+1️⃣ Исправляем кнопку Copy (без заголовка, все видимые строки)
+
+В коде формы (T_Werbung) замени процедуру cmdCopy_Click на эту:
+
+Private Sub cmdCopy_Click()
     Dim ws As Worksheet
-    Dim rng As Range
-    Dim crit As String
+    Dim rngTable As Range
+    Dim rngData As Range
+    Dim rngVisible As Range
     
     Set ws = ThisWorkbook.Worksheets("Getränke")
-    Set rng = ws.Range("A1").CurrentRegion   ' whole table
     
-    ' Ensure AutoFilter is enabled
-    If Not ws.AutoFilterMode Then
-        rng.AutoFilter
-    End If
+    ' Whole table with header in row 1
+    Set rngTable = ws.Range("A1").CurrentRegion
     
-    If Len(searchText) = 0 Then
-        ' Clear filter
-        On Error Resume Next
-        ws.ShowAllData
-        On Error GoTo 0
+    ' Data without header row
+    Set rngData = rngTable.Offset(1).Resize(rngTable.Rows.Count - 1)
+    
+    On Error Resume Next
+    Set rngVisible = rngData.SpecialCells(xlCellTypeVisible)
+    On Error GoTo 0
+    
+    If Not rngVisible Is Nothing Then
+        ' Copy only columns A:E of visible rows
+        rngVisible.Columns("A:E").Copy
     Else
-        ' Turn "Radeberger Pils 20x500"
-        ' into "*Radeberger*Pils*20x500*"
-        crit = "*" & Replace(searchText, " ", "*") & "*"
-        
-        ' Filter by column B (field 2)
-        rng.AutoFilter Field:=2, Criteria1:=crit
+        MsgBox "Keine sichtbaren Datenzeilen zum Kopieren.", vbInformation
     End If
 End Sub
+
+Теперь:
+	•	заголовок (первая строка) не копируется,
+	•	копируются все отфильтрованные строки, даже если их много.
+
+⸻
+
+2️⃣ Enter в TextBox сразу фильтрует
+
+В код формы добавь вот такую процедуру (она будет рядом с кнопками):
+
+Private Sub txtSearch_KeyDown(ByVal KeyCode As MSForms.ReturnInteger, ByVal Shift As Integer)
+    ' Run search when user presses Enter in the textbox
+    If KeyCode = vbKeyReturn Then
+        KeyCode = 0          ' suppress beep
+        ApplyGetraenkeFilter Trim(Me.txtSearch.Text)
+    End If
+End Sub
+
+Теперь:
+	•	набрал строку,
+	•	нажал Enter → сразу фильтрует, даже без клика по кнопке Search.
+
+⸻
+
+3️⃣ Форма не блокирует Excel
+
+В модуле Module1 (где макрос открытия формы) замени код на:
+
+Sub OpenGetraenkeSearchForm()
+    T_Werbung.Show vbModeless   ' show form modeless so Excel stays usable
+End Sub
+
+(Если форма у тебя называется иначе — подставь её имя вместо T_Werbung.)
+
+vbModeless = форма «плавающая», можно:
+	•	переключаться на другие листы и файлы,
+	•	копировать что хочешь,
+	•	при этом форма остаётся сверху и работает.
+
+⸻
+
+Если после этого ещё что-то ведёт себя не так (например, фильтр странно реагирует на пробелы или нужно копировать не в буфер, а сразу на другой лист) — давай подправим следующий шаг.
