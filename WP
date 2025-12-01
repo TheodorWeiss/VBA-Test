@@ -5,6 +5,7 @@ Public Function AnyTypeWordMatches(ByVal wechslerName As String, _
     Dim i As Long
     Dim w As String
     Dim searchWord As String
+    Dim isAF_src As Boolean, isAF_tgt As Boolean
     
     ' нормализуем обе строки
     src = NormalizeText(wechslerName)
@@ -12,7 +13,26 @@ Public Function AnyTypeWordMatches(ByVal wechslerName As String, _
     
     If Len(src) = 0 Or Len(tgt) = 0 Then Exit Function
     
-    ' разбиваем источник на слова
+    ' --- спец-логика для alkoholfrei / 0,0% ---
+    isAF_src = (InStr(1, src, "alkoholfrei", vbTextCompare) > 0 _
+                Or InStr(1, src, "0,0", vbTextCompare) > 0)
+    isAF_tgt = (InStr(1, tgt, "alkoholfrei", vbTextCompare) > 0 _
+                Or InStr(1, tgt, "0,0", vbTextCompare) > 0)
+    
+    ' если цель безалкогольная, а исходник НЕТ – сразу отказ
+    If isAF_tgt And Not isAF_src Then
+        AnyTypeWordMatches = False
+        Exit Function
+    End If
+    
+    ' если оба alkoholfrei/0,0 – считаем совпадением и выходим
+    If isAF_tgt And isAF_src Then
+        AnyTypeWordMatches = True
+        Exit Function
+    End If
+    
+    ' --- обычная логика: хотя бы одно "типовое" слово совпало ---
+    
     parts = Split(src, " ")
     
     ' начинаем с 1, чтобы пропустить первое слово (марку)
@@ -20,28 +40,32 @@ Public Function AnyTypeWordMatches(ByVal wechslerName As String, _
         w = parts(i)
         
         ' пропускаем слова с цифрами (упаковка и т.п.)
-        If Not w Like "*[0-9]*" Then
-            ' пропускаем слишком короткие слова
-            If Len(w) >= 3 Then
-                
-                ' --- СИНОНИМЫ / НОРМАЛИЗАЦИЯ ОТДЕЛЬНЫХ СЛОВ ---
-                searchWord = w
-                
-                ' Pilsner и Pils считаем одним и тем же
-                If searchWord = "pilsner" Then
-                    searchWord = "pils"
-                End If
-                ' дальше сюда можно добавлять новые пары:
-                ' If searchWord = "weizenbier" Then searchWord = "weizen"
-                ' If searchWord = "helles" Then searchWord = "hell"
-                ' и т.д.
-                
-                ' если слово (с учётом синонимов) встречается в целевой строке -> успех
-                If InStr(1, tgt, searchWord, vbTextCompare) > 0 Then
-                    AnyTypeWordMatches = True
-                    Exit Function
-                End If
-            End If
+        If w Like "*[0-9]*" Then GoTo NextWord
+        
+        ' пропускаем слишком короткие слова
+        If Len(w) < 3 Then GoTo NextWord
+        
+        ' стоп-слова упаковки, которые НЕ считаем фильтром
+        If w = "bügel" Then GoTo NextWord
+        ' сюда потом можно добавить ещё:
+        ' If w = "kasten" Then GoTo NextWord
+        ' If w = "mw" Then GoTo NextWord
+        ' If w = "ew" Then GoTo NextWord
+        
+        ' --- синонимы / нормализация отдельных слов ---
+        searchWord = w
+        
+        ' Pilsner и Pils считаем одним и тем же
+        If searchWord = "pilsner" Then
+            searchWord = "pils"
         End If
+        
+        ' если слово (с учётом синонимов) встречается в целевой строке -> успех
+        If InStr(1, tgt, searchWord, vbTextCompare) > 0 Then
+            AnyTypeWordMatches = True
+            Exit Function
+        End If
+        
+NextWord:
     Next i
 End Function
