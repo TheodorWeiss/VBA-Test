@@ -1,71 +1,43 @@
-Public Function AnyTypeWordMatches(ByVal wechslerName As String, _
-                                   ByVal fullName As String) As Boolean
-    Dim src As String, tgt As String
-    Dim parts() As String
-    Dim i As Long
-    Dim w As String
-    Dim searchWord As String
-    Dim isAF_src As Boolean, isAF_tgt As Boolean
+Function PackNorm(ByVal text As String, Optional ByVal index As Variant) As String
+    Dim re As Object, matches As Object, m As Object
+    Dim cnt As Long, volL As Double, volMl As Long
+    Dim effIndex As Long
     
-    ' нормализуем обе строки
-    src = NormalizeText(wechslerName)
-    tgt = NormalizeText(fullName)
+    Set re = CreateObject("VBScript.RegExp")
+    With re
+        ' Ищем пары "число x число(,число)" с возможными пробелами и L/l
+        ' Примеры: 20x0,5L / 24x0,33 l / 4x6x18 / 12 x 1,0 L
+        .Pattern = "(\d+)\s*x\s*(\d+(?:[.,]\d+)?)\s*[lL]?"
+        .Global = True
+        .IgnoreCase = True
+    End With
     
-    If Len(src) = 0 Or Len(tgt) = 0 Then Exit Function
-    
-    ' --- спец-логика для alkoholfrei / 0,0% ---
-    isAF_src = (InStr(1, src, "alkoholfrei", vbTextCompare) > 0 _
-                Or InStr(1, src, "0,0", vbTextCompare) > 0)
-    isAF_tgt = (InStr(1, tgt, "alkoholfrei", vbTextCompare) > 0 _
-                Or InStr(1, tgt, "0,0", vbTextCompare) > 0)
-    
-    ' если цель безалкогольная, а исходник НЕТ – сразу отказ
-    If isAF_tgt And Not isAF_src Then
-        AnyTypeWordMatches = False
+    If Not re.Test(text) Then
+        PackNorm = ""
         Exit Function
     End If
     
-    ' если оба alkoholfrei/0,0 – считаем совпадением и выходим
-    If isAF_tgt And isAF_src Then
-        AnyTypeWordMatches = True
-        Exit Function
-    End If
+    Set matches = re.Execute(text)
     
-    ' --- обычная логика: хотя бы одно "типовое" слово совпало ---
-    
-    parts = Split(src, " ")
-    
-    ' начинаем с 1, чтобы пропустить первое слово (марку)
-    For i = 1 To UBound(parts)
-        w = parts(i)
-        
-        ' пропускаем слова с цифрами (упаковка и т.п.)
-        If w Like "*[0-9]*" Then GoTo NextWord
-        
-        ' пропускаем слишком короткие слова
-        If Len(w) < 3 Then GoTo NextWord
-        
-        ' стоп-слова упаковки, которые НЕ считаем фильтром
-        If w = "bügel" Then GoTo NextWord
-        ' сюда потом можно добавить ещё:
-        ' If w = "kasten" Then GoTo NextWord
-        ' If w = "mw" Then GoTo NextWord
-        ' If w = "ew" Then GoTo NextWord
-        
-        ' --- синонимы / нормализация отдельных слов ---
-        searchWord = w
-        
-        ' Pilsner и Pils считаем одним и тем же
-        If searchWord = "pilsner" Then
-            searchWord = "pils"
-        End If
-        
-        ' если слово (с учётом синонимов) встречается в целевой строке -> успех
-        If InStr(1, tgt, searchWord, vbTextCompare) > 0 Then
-            AnyTypeWordMatches = True
+    ' Если индекс не задан – берём ПОСЛЕДНЮЮ пару (важно для 4x6x18)
+    If IsMissing(index) Then
+        effIndex = matches.Count   ' последняя пара
+    Else
+        effIndex = CLng(index)
+        If effIndex < 1 Or effIndex > matches.Count Then
+            PackNorm = ""
             Exit Function
         End If
-        
-NextWord:
-    Next i
+    End If
+    
+    Set m = matches(effIndex - 1)
+    
+    ' 1-я подгруппа: количество упаковок/бутылок слева от x
+    cnt = CLng(m.SubMatches(0))
+    
+    ' 2-я подгруппа: литры справа от x (могут быть с запятой или точкой)
+    volL = CDbl(Replace(m.SubMatches(1), ",", "."))
+    volMl = CLng(volL * 1000)
+    
+    PackNorm = CStr(cnt) & "x" & CStr(volMl)
 End Function
