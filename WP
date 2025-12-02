@@ -1,14 +1,15 @@
-Function PackNorm(ByVal text As String, Optional ByVal index As Variant) As String
-    Dim re As Object, matches As Object, m As Object
-    Dim cnt As Long, volL As Double, volMl As Long
-    Dim effIndex As Long
+Function PackNorm(ByVal text As String) As String
+    Dim re As Object, m As Object
+    Dim cnt As Long
+    Dim volRaw As String
+    Dim volNum As Double
+    Dim volMl As Long
     
     Set re = CreateObject("VBScript.RegExp")
     With re
-        ' Ищем пары "число x число(,число)" с возможными пробелами и L/l
-        ' Примеры: 20x0,5L / 24x0,33 l / 4x6x18 / 12 x 1,0 L
-        .Pattern = "(\d+)\s*x\s*(\d+(?:[.,]\d+)?)\s*[lL]?"
-        .Global = True
+        ' .* перед шаблоном делает поиск последней пары "число x число"
+        .Pattern = ".*(\d+)\s*x\s*(\d+(?:[.,]\d+)?)\s*[lL]?"
+        .Global = False          ' ищем ОДНО совпадение (последнее из всех)
         .IgnoreCase = True
     End With
     
@@ -17,27 +18,27 @@ Function PackNorm(ByVal text As String, Optional ByVal index As Variant) As Stri
         Exit Function
     End If
     
-    Set matches = re.Execute(text)
+    Set m = re.Execute(text)(0)
     
-    ' Если индекс не задан – берём ПОСЛЕДНЮЮ пару (важно для 4x6x18)
-    If IsMissing(index) Then
-        effIndex = matches.Count   ' последняя пара
-    Else
-        effIndex = CLng(index)
-        If effIndex < 1 Or effIndex > matches.Count Then
-            PackNorm = ""
-            Exit Function
-        End If
-    End If
-    
-    Set m = matches(effIndex - 1)
-    
-    ' 1-я подгруппа: количество упаковок/бутылок слева от x
+    ' 1-я подгруппа: количество слева от x
     cnt = CLng(m.SubMatches(0))
     
-    ' 2-я подгруппа: литры справа от x (могут быть с запятой или точкой)
-    volL = CDbl(Replace(m.SubMatches(1), ",", "."))
-    volMl = CLng(volL * 1000)
+    ' 2-я подгруппа: "сырое" значение объёма справа от x
+    volRaw = CStr(m.SubMatches(1))
+    volRaw = Replace(volRaw, ",", ".")
+    volNum = CDbl(volRaw)
+    
+    ' Перевод в мл:
+    ' < 10  → литры (0,33; 0,5; 1; 1,5…) → *1000
+    ' 10–99 → считаем cl (33, 75) → *10
+    ' ≥100  → уже мл (330, 750, 1000) → без изменения
+    If volNum < 10 Then
+        volMl = CLng(volNum * 1000)
+    ElseIf volNum < 100 Then
+        volMl = CLng(volNum * 10)
+    Else
+        volMl = CLng(volNum)
+    End If
     
     PackNorm = CStr(cnt) & "x" & CStr(volMl)
 End Function
