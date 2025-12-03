@@ -3,9 +3,12 @@ Function PackRaw(ByVal text As String) As String
     
     Set re = CreateObject("VBScript.RegExp")
     With re
-        ' Ищем ВСЕ пары "число x число(,число)" c возможным пробелом
-        ' Примеры: 20x0,5L / 24x0,33 / 42x6x0,33 / 12 x 0,75 L
-        .Pattern = "(\d+)\s*x\s*(\d+[.,]?\d*)"
+        ' Ищем ВСЕ блоки вида "числа x числа x ...", возможно с десятичной частью
+        ' Примеры:
+        '   20x0,5L            -> 20x0,5
+        '   42x6x0,33          -> 42x6x0,33
+        '   12x0,75L / 12x0,7L -> 12x0,7  (берём последний блок)
+        .Pattern = "(\d+(\s*x\s*\d+)*([.,]\d+)?)"
         .Global = True
         .IgnoreCase = True
     End With
@@ -15,10 +18,10 @@ Function PackRaw(ByVal text As String) As String
         Exit Function
     End If
     
-    ' Берём ПОСЛЕДНЕЕ совпадение (правый литраж)
     Set matches = re.Execute(text)
+    ' Берём ПОСЛЕДНЕЕ совпадение
     Set m = matches(matches.Count - 1)
     
-    ' Склеиваем "левое число x правое число"
-    PackRaw = CStr(m.SubMatches(0)) & "x" & CStr(m.SubMatches(1))
+    ' Полное совпадение целиком
+    PackRaw = m.Value
 End Function
