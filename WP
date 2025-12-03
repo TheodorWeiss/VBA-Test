@@ -3,12 +3,11 @@ Function PackRaw(ByVal text As String) As String
     
     Set re = CreateObject("VBScript.RegExp")
     With re
-        ' Ищем ВСЕ блоки вида "числа x числа x ...", возможно с десятичной частью
-        ' Примеры:
-        '   20x0,5L            -> 20x0,5
-        '   42x6x0,33          -> 42x6x0,33
-        '   12x0,75L / 12x0,7L -> 12x0,7  (берём последний блок)
-        .Pattern = "(\d+(\s*x\s*\d+)*([.,]\d+)?)"
+        ' Ищем БЛОК, где есть хотя бы один "x":
+        ' 20x0,5
+        ' 42x6x0,33
+        ' 12x0,75L / 12x0,7L -> последнее 12x0,7
+        .Pattern = "(\d+(\s*x\s*\d+)+([.,]\d+)?)"
         .Global = True
         .IgnoreCase = True
     End With
@@ -22,6 +21,5 @@ Function PackRaw(ByVal text As String) As String
     ' Берём ПОСЛЕДНЕЕ совпадение
     Set m = matches(matches.Count - 1)
     
-    ' Полное совпадение целиком
     PackRaw = m.Value
 End Function
