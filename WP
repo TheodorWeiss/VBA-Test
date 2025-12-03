@@ -1,21 +1,17 @@
-Function PackNorm(ByVal text As String) As String
+Function PackRaw(ByVal text As String) As String
     Dim re As Object, matches As Object, m As Object
-    Dim cnt As Long
-    Dim volRaw As String
-    Dim volNum As Double
-    Dim volMl As Long
     
     Set re = CreateObject("VBScript.RegExp")
     With re
-        ' Ищем ВСЕ пары "число x число(,число)" с возможными пробелами и L/l
-        ' Примеры: 20x0,5L / 24x0,33 l / 42x6x0,33 / 12 x 1,0 L
-        .Pattern = "(\d+)\s*x\s*(\d+(?:[.,]\d+)?)\s*[lL]?"
+        ' Ищем ВСЕ пары "число x число(,число)" c возможным пробелом
+        ' Примеры: 20x0,5L / 24x0,33 / 42x6x0,33 / 12 x 0,75 L
+        .Pattern = "(\d+)\s*x\s*(\d+[.,]?\d*)"
         .Global = True
         .IgnoreCase = True
     End With
     
     If Not re.Test(text) Then
-        PackNorm = ""
+        PackRaw = ""
         Exit Function
     End If
     
@@ -23,14 +19,6 @@ Function PackNorm(ByVal text As String) As String
     Set matches = re.Execute(text)
     Set m = matches(matches.Count - 1)
     
-    ' Кол-во слева от x
-    cnt = CLng(m.SubMatches(0))
-    
-    ' Литры справа от x → мл
-    volRaw = CStr(m.SubMatches(1))
-    volRaw = Replace(volRaw, ",", ".")
-    volNum = CDbl(volRaw)
-    volMl = CLng(volNum * 1000)   ' всегда литры → мл
-    
-    PackNorm = CStr(cnt) & "x" & CStr(volMl)
+    ' Склеиваем "левое число x правое число"
+    PackRaw = CStr(m.SubMatches(0)) & "x" & CStr(m.SubMatches(1))
 End Function
