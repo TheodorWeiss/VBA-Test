@@ -19,30 +19,18 @@ Function PackNorm(ByVal text As String) As String
         Exit Function
     End If
     
+    ' Берём ПОСЛЕДНЕЕ совпадение (правый литраж)
     Set matches = re.Execute(text)
-    
-    ' Берём ПОСЛЕДНЕЕ совпадение (это и есть "правый" литраж)
     Set m = matches(matches.Count - 1)
     
-    ' 1-я подгруппа: количество слева от x
+    ' Кол-во слева от x
     cnt = CLng(m.SubMatches(0))
     
-    ' 2-я подгруппа: "сырое" значение объёма справа от x
+    ' Литры справа от x → мл
     volRaw = CStr(m.SubMatches(1))
     volRaw = Replace(volRaw, ",", ".")
     volNum = CDbl(volRaw)
-    
-    ' Перевод в мл:
-    ' < 10  → литры (0,33; 0,5; 1; 1,5…) → *1000
-    ' 10–99 → считаем cl (33, 75) → *10
-    ' ≥100  → уже мл (330, 750, 1000) → без изменения
-    If volNum < 10 Then
-        volMl = CLng(volNum * 1000)
-    ElseIf volNum < 100 Then
-        volMl = CLng(volNum * 10)
-    Else
-        volMl = CLng(volNum)
-    End If
+    volMl = CLng(volNum * 1000)   ' всегда литры → мл
     
     PackNorm = CStr(cnt) & "x" & CStr(volMl)
 End Function
