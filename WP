@@ -1,5 +1,5 @@
 Function PackNorm(ByVal text As String) As String
-    Dim re As Object, m As Object
+    Dim re As Object, matches As Object, m As Object
     Dim cnt As Long
     Dim volRaw As String
     Dim volNum As Double
@@ -7,9 +7,10 @@ Function PackNorm(ByVal text As String) As String
     
     Set re = CreateObject("VBScript.RegExp")
     With re
-        ' .* перед шаблоном делает поиск последней пары "число x число"
-        .Pattern = ".*(\d+)\s*x\s*(\d+(?:[.,]\d+)?)\s*[lL]?"
-        .Global = False          ' ищем ОДНО совпадение (последнее из всех)
+        ' Ищем ВСЕ пары "число x число(,число)" с возможными пробелами и L/l
+        ' Примеры: 20x0,5L / 24x0,33 l / 42x6x0,33 / 12 x 1,0 L
+        .Pattern = "(\d+)\s*x\s*(\d+(?:[.,]\d+)?)\s*[lL]?"
+        .Global = True
         .IgnoreCase = True
     End With
     
@@ -18,7 +19,10 @@ Function PackNorm(ByVal text As String) As String
         Exit Function
     End If
     
-    Set m = re.Execute(text)(0)
+    Set matches = re.Execute(text)
+    
+    ' Берём ПОСЛЕДНЕЕ совпадение (это и есть "правый" литраж)
+    Set m = matches(matches.Count - 1)
     
     ' 1-я подгруппа: количество слева от x
     cnt = CLng(m.SubMatches(0))
