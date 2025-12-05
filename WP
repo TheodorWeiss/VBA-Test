@@ -1,14 +1,21 @@
 =WENN($B2="KW 06";
     WENNFEHLER(
-        ACHSEABSCHNITT(
-            FILTER($AK:$AK; ($G:$G=$G2)*($AK:$AK>0));
-            FILTER($C:$C;  ($G:$G=$G2)*($AK:$AK>0))
-        )
-        +
-        STEIGUNG(
-            FILTER($AK:$AK; ($G:$G=$G2)*($AK:$AK>0));
-            FILTER($C:$C;  ($G:$G=$G2)*($AK:$AK>0))
-        )
-        * $C2;
+        WENN(
+            ANZAHL(
+                FILTER($AK$2:$AK$4000;
+                    ($G$2:$G$4000=$G2)*($Q$2:$Q$4000=$Q2)*($AK$2:$AK$4000>0)
+                )
+            )>0;
+            MITTELWERT(
+                FILTER($AK$2:$AK$4000;
+                    ($G$2:$G$4000=$G2)*($Q$2:$Q$4000=$Q2)*($AK$2:$AK$4000>0)
+                )
+            );
+            MITTELWERT(
+                FILTER($AK$2:$AK$4000;
+                    ($G$2:$G$4000=$G2)*($AK$2:$AK$4000>0)
+                )
+            )
+        );
     "");
 "")
