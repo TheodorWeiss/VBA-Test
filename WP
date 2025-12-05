@@ -1,25 +1,185 @@
-Function PackRaw(ByVal text As String) As String
-    Dim re As Object, matches As Object, m As Object
-    
-    Set re = CreateObject("VBScript.RegExp")
-    With re
-        ' Ищем БЛОК, где есть хотя бы один "x":
-        ' 20x0,5
-        ' 42x6x0,33
-        ' 12x0,75L / 12x0,7L -> последнее 12x0,7
-        .Pattern = "(\d+(\s*x\s*\d+)+([.,]\d+)?)"
-        .Global = True
-        .IgnoreCase = True
-    End With
-    
-    If Not re.Test(text) Then
-        PackRaw = ""
-        Exit Function
-    End If
-    
-    Set matches = re.Execute(text)
-    ' Берём ПОСЛЕДНЕЕ совпадение
-    Set m = matches(matches.Count - 1)
-    
-    PackRaw = m.Value
-End Function
+Вот идеальный, финальный, чёткий список вопросов, которые ты можешь задать коллегам на встрече. Они сформулированы по-немецки, в профессиональном стиле, и разделены на два блока: Fragen zu den Daten и Fragen zur Methodik.
+
+Ты можешь просто открыть этот список и последовательно пройтись по пунктам.
+
+⸻
+
+✅ Fragen zu den Daten (Datenstruktur, Bedeutung der Spalten)
+
+1. Artikelstruktur
+	•	„Sollen wir für die Prognose auf Ebene des Oberartikels aggregieren (inkl. aller Unterartikel), oder soll jeder Unterartikel separat betrachtet werden?“
+
+2. Promo Typ: Handzettel vs. App
+	•	„Wenn bei Promo-Typ ‚Handzettel‘ und gleichzeitig App-Preise eingetragen sind – gilt das als eine gemeinsame Aktion oder als zwei getrennte?“
+	•	„Wenn der Promo-Typ ‚NettoApp‘ ist – bedeutet das automatisch, dass der Handzettel auch aktiv ist? Oder wirken App-Aktionen nur digital?“
+
+3. Preise
+	•	„Welche Preisangabe ist ausschlaggebend für den Forecast? NK (normal), AK (Handzettel) oder App-Preis?“
+	•	„Soll der Forecast grundsätzlich auf dem Handzettelpreis basieren, falls vorhanden?“
+
+4. Seitentyp (AktionsThema / Promo-Platzierung)
+	•	„Welche Rolle spielt die Platzierung im Handzettel (Titel, Rückseite, Innenseite)? Gibt es feste Multiplikatoren oder Erfahrungswerte?“
+
+5. Bedeutung der Prozentwerte
+	•	„Was bedeuten die Prozentangaben in den Spalten ‚Anteil Promo‘ und ‚Anteil Promo Ist‘ genau? Wie werden diese Werte berechnet?“
+
+6. Spalte ‚Anzahl Filialen‘
+	•	„Gibt die Spalte ‚Anzahl Filialen‘ die Zahl der teilnehmenden Märkte wieder? Und sollen wir Absatzwerte auf diese Zahl normieren?“
+
+7. Fehlende oder unvollständige Daten
+	•	„Wie gehen wir mit Artikeln um, für die nur sehr wenige historische Wochen vorliegen? Sollen wir ähnliche Artikel oder Kategorie-Durchschnittswerte heranziehen?“
+
+8. Out-of-Stock Situation
+	•	„Sind OOS-Situationen in den Ist-Daten gekennzeichnet? Müssen Wochen mit OOS für die Prognose ausgeschlossen werden?“
+
+⸻
+
+✅ Fragen zur Methodik (Berechnung, Logik, Genauigkeit)
+
+9. Promo-Uplift
+	•	„Sollen wir den Promo-Uplift pro Artikel individuell aus den letzten Aktionen berechnen oder eher einen kategorieweiten Uplift verwenden?“
+
+10. Preiselastizität
+	•	„Soll die Preisänderung (Differenz zwischen Normalpreis und Aktionspreis) explizit in den Forecast einfließen? Wenn ja – wie detailliert?“
+
+11. Einfluss des Seitentyps
+	•	„Soll der Seitentyp als Faktor in den Forecast einbezogen werden? Wenn ja, haben wir definierte Uplift-Faktoren für Titelblatt / Rückseite / Innenseite?“
+
+12. Soll- vs. Ist-Abweichungen
+	•	„Sollen wir aus historischen Soll-/Ist-Abweichungen des Einkaufs Prognosekorrekturen ableiten? Oder betrachten wir nur Ist-Daten?“
+
+13. Auswahl des Datenzeitraums
+	•	„Welche Zeiträume sollen wir als Basis nutzen: nur die letzten KWs, einen gleitenden Durchschnitt, oder auch vergleichbare Aktionen aus dem Vorjahr?“
+
+14. KPI zur Bewertung des Forecasts
+	•	„Welchen KPI sollen wir für die Forecast-Bewertung verwenden – MAPE, WAPE oder absolute Abweichung?“
+
+15. Umgang mit App-Daten
+	•	„Sollen App-Aktionen überhaupt in die Modellbildung einfließen, wenn unser Forecast primär für die Handzettel-Aktionen gilt?“
+
+16. Vorrang von Listungsänderungen
+	•	„Müssen wir Listungsänderungen oder Filialreichweite als separate Einflussgröße berücksichtigen?“
+
+17. Prognosegranularität
+	•	„Erwartet ihr den Forecast als Gesamtabsatz pro Oberartikel (Summe KW06), oder als Absatz pro Filiale, oder sogar getrennt nach Marktclustern?“
+
+⸻
+
+✅ Хочешь, сделаю удобный чек-лист, который можно держать перед собой на встрече?
+
+Могу также подготовить короткую речь на немецком, чтобы ты уверенно презентовал свой подход.
+Конечно, Theo. Вот идеальный, короткий, удобный чек-лист, который можно держать перед собой на встрече. Структурировано, без лишних слов — только то, что нужно уточнить, чтобы сделать корректный прогноз.
+
+⸻
+
+✅ CHEKLISTE – Absatzprognose Getränke (KW06)
+
+(Datenklärung + Methodenklärung)
+
+⸻
+
+1. Datenklärung (unbedingt vor Forecast klären)
+
+Artikel & Struktur
+
+☐ Prognose auf Ebene Oberartikel oder Unterartikel einzeln?
+☐ Müssen Unterartikel aggregiert werden?
+
+Promo-Typ / Handzettel / App
+
+☐ Wenn AK = Handzettel + App-Preis vorhanden → ist es eine Aktion oder zwei getrennte?
+☐ Wenn Promo Typ = NettoApp → gilt Handzettelpreis automatisch?
+☐ Sollen App-Daten in den Forecast einfließen, wenn Fokus Handzettel ist?
+
+Preise
+
+☐ Welcher Preis ist maßgeblich für Forecast?
+– Normalpreis (NK)
+– Handzettelpreis (AK)
+– App-Preis
+☐ Soll der Forecast grundsätzlich auf AK (Handzettelpreis) basieren?
+
+Seitentyp / Platzierung
+
+☐ Haben wir feste Uplift-Faktoren für:
+– Titelblatt
+– Rückseite
+– Innenseiten
+☐ Wie stark soll die Platzierung gewichtet werden?
+
+Prozentwerte
+
+☐ Bedeutung von Anteil Promo und Anteil Promo Ist?
+☐ Wie wurden diese Werte berechnet?
+
+Anzahl Filialen
+
+☐ Ist das die Anzahl teilnehmender Filialen?
+☐ Soll Absatz auf Filialanzahl normalisiert werden?
+
+Fehlende Daten
+
+☐ Was tun bei Artikeln mit wenig Historie?
+– ähnliche Produkte?
+– Kategorie-Durchschnitt?
+– andere Wochen?
+
+OOS / Sonderfälle
+
+☐ Sind Out-of-Stock Situationen gekennzeichnet?
+☐ Müssen solche Wochen aus der Historie entfernt werden?
+
+⸻
+
+2. Methodenklärung (wie wir prognostizieren sollen)
+
+Promo-Uplift
+
+☐ Soll Uplift pro Artikel individuell berechnet werden?
+☐ Oder kategorieweite Uplifts verwenden?
+
+Preiselastizität
+
+☐ Soll Preisänderung explizit in Forecast einfließen?
+☐ Gibt es Referenzwerte für die Getränkekategorie?
+
+Seitentypeffekt
+
+☐ Soll Seitentyp als Multiplikator eingesetzt werden?
+☐ Haben wir interne Benchmarks?
+
+Soll-Ist-Abweichungen
+
+☐ Sollen historische Forecast-Abweichungen des Einkaufs zur Korrektur genutzt werden?
+
+Zeitraum der Datenbasis
+
+☐ Welche Wochen nutzen wir?
+– nur letzte 4–6 Wochen?
+– letzte Aktionen?
+– Vorjahresaktionen?
+
+KPI für Forecastqualität
+
+☐ Welchen KPI erwartet ihr?
+– MAPE
+– WAPE
+– absolute Abweichung
+– anderes?
+
+Forecastgranularität
+
+☐ Forecast als:
+– Gesamtabsatz pro Artikel?
+– Absatz pro Filiale?
+– Cluster/Regionen getrennt?
+
+⸻
+
+✅ Если хочешь, я могу:
+
+✔ сделать этот чек-лист в виде PDF/таблички
+✔ подготовить тебе немецкий текст для устного объяснения
+✔ написать короткий „Pitch“: как ты подходишь к прогнозу и почему твой метод логичен
+
+Скажи, что из этого нужно?
