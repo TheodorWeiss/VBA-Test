@@ -1,8 +1,14 @@
 =WENN($B2="KW 06";
     WENNFEHLER(
-        $Z2 *
-        SUMMEWENNS($AK:$AK; $G:$G; $G2; $Z:$Z; ">0"; $AK:$AK; ">0")
-        /
-        SUMMEWENNS($Z:$Z;  $G:$G; $G2; $Z:$Z; ">0"; $AK:$AK; ">0");
+        ACHSEABSCHNITT(
+            FILTER($AK:$AK; ($G:$G=$G2)*($AK:$AK>0));
+            FILTER($C:$C;  ($G:$G=$G2)*($AK:$AK>0))
+        )
+        +
+        STEIGUNG(
+            FILTER($AK:$AK; ($G:$G=$G2)*($AK:$AK>0));
+            FILTER($C:$C;  ($G:$G=$G2)*($AK:$AK>0))
+        )
+        * $C2;
     "");
 "")
