@@ -1,21 +1,6 @@
-=WENN($B2="KW 06";
-    WENNFEHLER(
-        WENN(
-            ANZAHL(
-                FILTER($AK$2:$AK$4000;
-                    ($G$2:$G$4000=$G2)*($Q$2:$Q$4000=$Q2)*($AK$2:$AK$4000>0)
-                )
-            )>0;
-            MITTELWERT(
-                FILTER($AK$2:$AK$4000;
-                    ($G$2:$G$4000=$G2)*($Q$2:$Q$4000=$Q2)*($AK$2:$AK$4000>0)
-                )
-            );
-            MITTELWERT(
-                FILTER($AK$2:$AK$4000;
-                    ($G$2:$G$4000=$G2)*($AK$2:$AK$4000>0)
-                )
-            )
-        );
-    "");
-"")
+=MITTELWERTWENNS($AG:$AG;
+                 $K:$K;"Schmidt";
+                 $E:$E;$E2;
+                 $M:$M;$M2;
+                 $N:$N;$N2;
+                 $Q:$Q;$Q2)
