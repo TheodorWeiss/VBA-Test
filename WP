@@ -1,6 +1,16 @@
-=MITTELWERTWENNS($AG:$AG;
-                 $K:$K;"Schmidt";
-                 $E:$E;$E2;
-                 $M:$M;WENN(ISTZAHL(SUCHEN("Superbowl";$M2));"*Getränke*";$M2);
-                 $N:$N;$N2;
-                 $Q:$Q;$Q2)
+=WENN(
+   ZÄHLЕНWENNS($K:$K;"Schmidt";$E:$E;$E2;$M:$M;$M2)=0;
+   "Keine Historie für M";
+   ""
+)
+=WENN(
+   ZÄHLЕНWЕНNS($K:$K;"Schmidt";$E:$E;$E2;$M:$M;$M2;$N:$N;$N2)=0;
+   "Keine Historie für N";
+   ""
+)
+
+=WENN(
+   ZÄHLENWENNS($K:$K;"Schmidt";$E:$E;$E2;$M:$M;$M2;$N:$N;$N2;$Q:$Q;$Q2)=0;
+   "Keine Historie für Preis";
+   ""
+)
