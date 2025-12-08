@@ -1,6 +1,8 @@
-=MITTELWERTWENNS($AG:$AG;
-                 $K:$K;"Schmidt";
-                 $E:$E;$E2;
-                 $M:$M;$M2;
-                 $N:$N;$N2;
-                 $Q:$Q;$Q2)
+=MITTELWERTWENN(($K:$K="Schmidt")*
+                ($E:$E=$E2)*
+                ($N:$N=$N2)*
+                ($Q:$Q=$Q2)*
+                (WENN(ISTZAHL(SUCHEN("Superbowl";$M2));
+                     ISTZAHL(SUCHEN("Getränke";$M:$M));
+                     $M:$M=$M2));
+                $AG:$AG)
