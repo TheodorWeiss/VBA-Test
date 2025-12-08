@@ -1,16 +1,10 @@
 =WENN(
-   ZÄHLЕНWENNS($K:$K;"Schmidt";$E:$E;$E2;$M:$M;$M2)=0;
-   "Keine Historie für M";
-   ""
+    ZÄHLENWENNS($K:$K;$K171;
+                $E:$E;$E171;
+                $M:$M;$M171;
+                $B:$B;"<>KW 06";
+                $AG:$AG;">0")=0;
+    "Keine Historie für M";
+    ""
 )
-=WENN(
-   ZÄHLЕНWЕНNS($K:$K;"Schmidt";$E:$E;$E2;$M:$M;$M2;$N:$N;$N2)=0;
-   "Keine Historie für N";
-   ""
-)
-
-=WENN(
-   ZÄHLENWENNS($K:$K;"Schmidt";$E:$E;$E2;$M:$M;$M2;$N:$N;$N2;$Q:$Q;$Q2)=0;
-   "Keine Historie für Preis";
-   ""
-)
+=UND($K2=$K$171;$E2=$E$171;$M2=$M$171;$B2<>"KW 06")
