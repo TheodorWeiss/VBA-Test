@@ -1,15 +1,10 @@
 =WENNFEHLER(
    WERT(
-      RECHTS(
-         LINKS(A2;FINDEN("x";A2)-1);
-         LÄNGE(LINKS(A2;FINDEN("x";A2)-1))
-         -MAX(
-            WENN(
-               ISTZAHL(--TEIL(LINKS(A2;FINDEN("x";A2)-1);ZEILE($1:$99);1));
-               0;
-               ZEILE($1:$99)
-            )
-         )
+      LET(
+         pos; FINDEN("x";A2);
+         links; LINKS(A2; pos-1);
+         digits; WECHSELN(links; " "; "");
+         RECHTS(digits; LÄNGE(digits) - MAX(WENNFEHLER(SUCHEN({0;1;2;3;4;5;6;7;8;9}; digits);0)) +1)
       )
    );
    "no pack pattern"
