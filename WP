@@ -1,5 +1,9 @@
-=SUMMENPRODUKT(
-   ($C$5:$C$1230=$C5) *
-   ($E$5:$E$1230<>"") /
-   COUNTIFS($C$5:$C$1230;$C5;$E$5:$E$1230;$E$5:$E$1230)
+=WENN(
+   SUMMENPRODUKT(
+      ($C$5:$C$1230=$C5) *
+      ($E$5:$E$1230<>"") /
+      ZÄHLENWENNS($C$5:$C$1230;$C5;$E$5:$E$1230;$E$5:$E$1230)
+   )<=1;
+   $AL5;
+   SUMMENPRODUKT(($C$5:$C$1230=$C5) * WENNFEHLER($AL$5:$AL$1230/$E$5:$E$1230;0))
 )
