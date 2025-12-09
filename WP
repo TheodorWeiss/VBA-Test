@@ -1,9 +1,12 @@
-=WENN(
-   SUMMENPRODUKT(
-      ($C$5:$C$1230=$C5) *
-      ($E$5:$E$1230<>"") /
-      ZÄHLENWENNS($C$5:$C$1230;$C5;$E$5:$E$1230;$E$5:$E$1230)
-   )<=1;
-   $AL5;
-   SUMMENPRODUKT(($C$5:$C$1230=$C5) * WENNFEHLER($AL$5:$AL$1230/$E$5:$E$1230;0))
+=SUMMENPRODUKT(1/ZÄHLENWENNS($E$5:$E$1230;$E$5:$E$1230))
+
+=SUMMENPRODUKT(
+   ($B$5:$B$1230=$B5)*
+   ($F$5:$F$1230=$F5)*
+   ($N$5:$N$1230=$N5)*
+   ($E$5:$E$1230<>"") /
+   ZÄHLENWENNS($B$5:$B$1230;$B5;
+               $F$5:$F$1230;$F5;
+               $N$5:$N$1230;$N5;
+               $E$5:$E$1230;$E$5:$E$1230)
 )
