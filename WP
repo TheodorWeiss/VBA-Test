@@ -1,15 +1,5 @@
-=SUMMENPRODUKT(
-   WENN(
-      ($B$5:$B$1230=$B5)*
-      ($F$5:$F$1230=$F5)*
-      ($N$5:$N$1230=$N5)*
-      ($E$5:$E$1230<>"");
-      1/ZÄHLENWENNS(
-         $B$5:$B$1230;$B5;
-         $F$5:$F$1230;$F5;
-         $N$5:$N$1230;$N5;
-         $E$5:$E$1230;$E$5:$E$1230
-      );
-      0
-   )
-)
+=WENN(ODER(ISTZAHL(SUCHEN("wert1";A1));
+           ISTZAHL(SUCHEN("wert2";A1));
+           ISTZAHL(SUCHEN("wert3";A1)));
+     1,3;
+     "")
