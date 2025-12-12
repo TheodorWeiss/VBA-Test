@@ -1,1 +1,83 @@
-й
+Хорошо, давай сделаем структурированное, подробное и при этом рабочее объяснение на немецком, таким языком, которым реально объясняют логику коллегам в проектах. Я сохраню техническую точность, но без лишней «академичности».
+
+⸻
+
+Erläuterung der Logik zur Absatz-Erwartungs-Prognose und Themenzuordnung
+
+Im Folgenden erläutere ich die Logik, nach der die Absatz-Erwartung berechnet wird, insbesondere im Zusammenspiel zwischen Aktionsthema, Preisbasis und der Auswahl der Vergleichsdaten.
+
+⸻
+
+1. Bedeutung der Spalte AR (Prozentwerte)
+Die in Spalte AR hinterlegten Prozentwerte stellen keine direkten Rechenfaktoren dar, die aktuell in der Formel zur Multiplikation verwendet werden.
+Sie dienen vielmehr als Klassifizierungsmerkmal, um Aktionsthemen anhand ihrer zeitlichen Dauer bzw. ihres Wochengewichts voneinander zu unterscheiden.
+
+Die zugrunde liegende Logik und die Zuordnung der Prozentwerte ist auf dem Tabellenblatt „Tagesgewicht“ hinterlegt. Dort ist definiert, wie viel Prozent des Wochengewichts ein bestimmtes Thema einnimmt.
+
+Ein Wert von 120 % wird ausschließlich dann vergeben, wenn das Aktionsthema wörtlich eines der folgenden Schlüsselwörter enthält:
+	•	Knüller 1
+	•	Knüller 2
+	•	Highlight
+
+Nur in diesen Fällen wird das Thema der Kategorie 120 % zugeordnet.
+
+⸻
+
+2. Zweck dieser Themenklassifizierung
+Diese Klassifizierung wird insbesondere dann relevant, wenn das Aktionsthema nicht exakt übereinstimmt.
+In solchen Fällen werden nicht alle verfügbaren historischen Daten herangezogen, sondern nur Vergleichszeilen mit identischem Themengewicht.
+
+⸻
+
+3. Auswahl der Vergleichsdaten (Beispiel)
+Im konkreten Beispiel erfolgt die Datenauswahl wie folgt:
+	1.	Es werden ausschließlich Zeilen berücksichtigt, bei denen der Wert in Spalte AM ungleich Null ist.
+	2.	Zusätzlich müssen folgende Bedingungen erfüllt sein:
+	•	gleicher Preis wie im Zielartikel (Spalte R)
+	•	gleiches Themengewicht in Spalte AR (z. B. 120 %)
+	3.	Nur auf Basis dieser gefilterten Zeilen wird anschließend der Durchschnittswert berechnet.
+
+Diese Logik stellt sicher, dass nur inhaltlich vergleichbare Aktionen in die Prognose einfließen.
+
+⸻
+
+4. Preisband statt exakter Preisübereinstimmung
+Ein weiterer wichtiger Punkt:
+Die Durchschnittswerte werden nicht ausschließlich auf Basis exakt identischer Preise berechnet.
+
+Aktuell wird ein Preisintervall von ±30 % verwendet.
+
+Zweck dieses Ansatzes:
+	•	Abdeckung einer größeren Anzahl an Vergleichsartikeln
+	•	bessere Stabilität der Prognose bei Artikeln mit sehr kurzer oder lückenhafter Historie
+
+Der gewählte Bereich von ±30 % ist bewusst relativ breit gewählt und aus meiner Sicht für eine erste Schätzung gut geeignet, da die Berechnung immer innerhalb desselben Artikels erfolgt.
+
+Dieser Bereich kann bei Bedarf angepasst werden.
+
+⸻
+
+5. Abweichende Logik bei identischem Thema
+In der Formel (sichtbar u. a. in Spalte BFAU) ist zusätzlich eine differenzierte Logik hinterlegt:
+	•	Falls das Thema übereinstimmt, der Preis jedoch abweicht,
+wird ein engeres Preisband von ±15 % verwendet.
+
+Auch dieser Wert ist in Spalte BFAU flexibel anpassbar.
+
+⸻
+
+6. Zusammenfassung der Berechnungslogik
+	•	In Spalte BU wird die Absatz-Erwartung berechnet, wenn alle relevanten Merkmale übereinstimmen.
+	•	Falls mindestens ein Merkmal abweicht, erfolgt die Berechnung in Spalte BFAU.
+
+Dabei gibt es zwei zentrale Szenarien (gesteuert über die Hinweise in den Spalten BH und BC):
+	1.	Thema stimmt nicht überein
+→ Berechnung auf Basis vergleichbarer Themen mit gleichem Gewicht und ±30 % Preisband
+	2.	Thema stimmt überein, Preis nicht
+→ Berechnung auf Basis ±15 % Preisband
+
+⸻
+
+Wenn du willst, могу в следующем шаге:
+	•	сократить это до „Kurzfassung für Mail“
+	•	или перевести в Pseudo-Logik / Entscheidungsbaum, чтобы было ещё нагляднее.
