@@ -1,1 +1,46 @@
-й
+let
+    // ... твои предыдущие Schritte ...
+
+    // 1) Merge (у тебя уже есть)
+    #"Zusammengeführte Abfragen" =
+        Table.NestedJoin(
+            /* твои параметры */,
+            {"Marke","Volume"},
+            tbl_Drotax,
+            {"Marke","Volume"},
+            "tbl_Drotax",
+            JoinKind.LeftOuter
+        ),
+
+    // 2) НОВЫЙ шаг: фильтруем вложенную tbl_Drotax по Keyword
+    #"tbl_Drotax nach Keyword gefiltert" =
+        Table.AddColumn(
+            #"Zusammengeführte Abfragen",
+            "tbl_Drotax_filtered",
+            each
+                let
+                    kw = Text.From([tbl_Segments.Keywords]),     // НЕ Trim! пробелы сохраняем
+                    t  = [tbl_Drotax],
+                    res =
+                        if kw = null or kw = "" then
+                            Table.FirstN(t, 0)                   // жёстко: пусто
+                        else
+                            Table.SelectRows(
+                                t,
+                                each Text.Contains([Produktname], kw, Comparer.OrdinalIgnoreCase)
+                            )
+                in
+                    res,
+            type table
+        ),
+
+    // 3) Удаляем старую вложенную колонку
+    #"Alte tbl_Drotax entfernt" =
+        Table.RemoveColumns(#"tbl_Drotax nach Keyword gefiltert", {"tbl_Drotax"}),
+
+    // 4) Переименовываем новую обратно в tbl_Drotax
+    #"tbl_Drotax umbenannt" =
+        Table.RenameColumns(#"Alte tbl_Drotax entfernt", {{"tbl_Drotax_filtered", "tbl_Drotax"}})
+
+in
+    #"tbl_Drotax umbenannt"
