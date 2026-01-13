@@ -1,99 +1,46 @@
-let
-    Quelle = tbl_Wechsler_matched,
+// 1) Временный флаг: безалкогольный ли Produktname
+#"IsNA hinzugefügt" =
+    Table.AddColumn(
+        #"Erweiterte tbl_Drotax1",
+        "IsNA",
+        each
+            let
+                pn = Text.Lower(Text.From([Produktname]))
+            in
+                Text.Contains(pn, "alkoholfrei")
+                or Text.Contains(pn, "0,0")
+                or Text.Contains(pn, "0.0"),
+        type logical
+    ),
 
-    #"Abgeschnittener Text" =
-        Table.TransformColumns(
-            Quelle,
-            {{"Marke", Text.Trim, type text}}
-        ),
-
-    #"Bereinigter Text" =
-        Table.TransformColumns(
-            #"Abgeschnittener Text",
-            {{"Marke", Text.Clean, type text}}
-        ),
-
-    #"Abgeschnittener Text1" =
-        Table.TransformColumns(
-            #"Bereinigter Text",
-            {{"Volume", Text.Trim, type text}}
-        ),
-
-    #"Bereinigter Text1" =
-        Table.TransformColumns(
-            #"Abgeschnittener Text1",
-            {{"Volume", Text.Clean, type text}}
-        ),
-
-    #"Zusammengeführte Abfragen" =
-        Table.NestedJoin(
-            #"Bereinigter Text1",
-            {"Marke", "Volume"},
-            tbl_Drotax,
-            {"Marke", "Volume"},
-            "tbl_Drotax",
-            JoinKind.LeftOuter
-        ),
-
-    // НОВОЕ: фильтруем вложенную tbl_Drotax по Keyword (жёстко)
-    #"tbl_Drotax nach Keyword gefiltert" =
-        Table.AddColumn(
-            #"Zusammengeführte Abfragen",
-            "tbl_Drotax_filtered",
-            each
+// 2) Применяем правила только для Kategorie = "BIE" внутри каждого Row_ID
+#"BIE Alk-Regeln angewendet" =
+    Table.Combine(
+        Table.TransformRows(
+            Table.Group(#"IsNA hinzugefügt", {"Row_ID"}, {{"t", each _, type table}}),
+            (r) =>
                 let
-                    kw = Text.From([tbl_Segments.Keywords]),   // пробелы сохраняем, НЕ Trim
-                    t  = [tbl_Drotax],
+                    t = r[t],
+
+                    // считаем, что эти поля константны внутри Row_ID (они из Wechsler)
+                    kat = try Text.From(t[Kategorie]{0}) otherwise null,
+                    af  = try Text.From(t[AlkFlag]{0}) otherwise null,
+                    sl  = try Number.From(t[Slash]{0}) otherwise null,
+
                     res =
-                        if kw = null or kw = "" then
-                            Table.FirstN(t, 0)
+                        if kat <> "BIE" then
+                            t
+                        else if af = "AF-" then
+                            Table.SelectRows(t, each [IsNA] <> true)
+                        else if af = "AF+" and sl = 0 then
+                            Table.SelectRows(t, each [IsNA] = true)
                         else
-                            Table.SelectRows(
-                                t,
-                                each Text.Contains([Produktname], kw, Comparer.OrdinalIgnoreCase)
-                            )
+                            t
                 in
-                    res,
-            type table
-        ),
-
-    #"Alte tbl_Drotax entfernt" =
-        Table.RemoveColumns(
-            #"tbl_Drotax nach Keyword gefiltert",
-            {"tbl_Drotax"}
-        ),
-
-    #"tbl_Drotax umbenannt" =
-        Table.RenameColumns(
-            #"Alte tbl_Drotax entfernt",
-            {{"tbl_Drotax_filtered", "tbl_Drotax"}}
-        ),
-
-    #"Erweiterte tbl_Drotax1" =
-        Table.ExpandTableColumn(
-            #"tbl_Drotax umbenannt",
-            "tbl_Drotax",
-            {"Marke", "Kategorie", "Segment", "Gruppe", "Produktname", "Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte", "Preistyp", "EAN", "DAN", "Volume"},
-            {"Marke.1", "Kategorie", "Segment", "Gruppe", "Produktname", "Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte", "Preistyp", "EAN", "DAN", "Volume.1"}
-        ),
-
-    #"Andere entfernte Spalten" =
-        Table.SelectColumns(
-            #"Erweiterte tbl_Drotax1",
-            {"Name", "Row_ID", "Marke", "Volume", "tbl_Segments.Keywords", "Kategorie", "Segment", "Gruppe", "Produktname", "Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte", "Preistyp", "EAN", "DAN"}
-        ),
-
-    #"Gefilterte Zeilen" =
-        Table.SelectRows(
-            #"Andere entfernte Spalten",
-            each true
-        ),
-
-    #"Neu angeordnete Spalten" =
-        Table.ReorderColumns(
-            #"Gefilterte Zeilen",
-            {"Name", "Row_ID", "Produktname", "Volume.1", "Marke", "DAN", "EAN", "Preistyp", "% Märkte", "Kalenderwoche", "Anbieter", "Aktionspreis min", "Gruppe", "Kategorie", "Segment"}
+                    res
         )
+    ),
 
-in
-    #"Neu angeordnete Spalten"
+// 3) Убираем временную колонку
+#"IsNA entfernt" =
+    Table.RemoveColumns(#"BIE Alk-Regeln angewendet", {"IsNA"})
