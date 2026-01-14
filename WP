@@ -1,71 +1,85 @@
-// 4) Für BIE + AF+ + Slash=0: pro Row_ID genau 1 beste Zeile wählen (Score über Keyword_Drotax-Tokens)
-#"AF+ Slash0 Top1 gewählt" =
-    Table.Combine(
-        Table.TransformRows(
-            Table.Group(#"IsNA entfernt", {"Row_ID"}, {{"t", each _, type table}}),
-            (r) =>
-                let
-                    t = r[t],
+let
+    Source = Excel.CurrentWorkbook(){[Name="pKW"]}[Content],
+    KW_Text = Source{0}[Column1]
+in
+    KW_Text
 
-                    // robustes Lesen von Kategorie / AlkFlag / Slash / Keyword_Drotax
-                    kat =
-                        let
-                            k1 = try Text.From(t[Kategorie]{0}) otherwise null,
-                            k2 = try Text.From(t[#"Kategorie.1"]{0}) otherwise null
-                        in
-                            if k1 <> null and k1 <> "" then Text.Trim(Text.Clean(k1)) else Text.Trim(Text.Clean(k2)),
+let
+    // 1) KW aus L1 (Named Range pKW -> Query p_KW)
+    KW_Text = p_KW,                    // z.B. "02/2026"
+    KW_Num  = Text.Start(KW_Text, 2),  // "02"
 
-                    af  = try Text.Trim(Text.Clean(Text.From(t[AlkFlag]{0}))) otherwise null,
-                    sl  = try Number.From(t[Slash]{0}) otherwise null,
+    // 2) Basis-Pfad (ANPASSEN)
+    BasePath   = "\\\\SERVER\\Kennzahlen\\",
+    WeekFolder = "KW" & KW_Num & " 26",
 
-                    kwD =
-                        let
-                            a = try Text.From(t[#"tbl_Segments.Keyword_Drotax"]{0}) otherwise null,
-                            b = try Text.From(t[Keyword_Drotax]{0}) otherwise null
-                        in
-                            if a <> null and a <> "" then a else b,
+    // 3) Dateien im Wochenordner
+    Files = Folder.Files(BasePath & WeekFolder),
 
-                    // Nur in diesem Fall verdichten wir auf 1 Zeile
-                    res =
-                        if kat <> "BIE" or af <> "AF+" or sl <> 0 then
-                            t
-                        else
-                            let
-                                // Keyword_Drotax in Tokens zerlegen (Whitespace), leere Tokens entfernen
-                                tokens0 = if kwD = null then {} else List.Select(Text.SplitAny(kwD, " "), each _ <> ""),
-                                tokens  = List.Transform(tokens0, each Text.Lower(Text.Clean(_))),
+    // 4) Passende PDF-Datei finden
+    Filtered =
+        Table.SelectRows(
+            Files,
+            each [Extension] = ".pdf"
+              and Text.Contains([Name], "Kennzahlen HZ")
+              and Text.Contains([Name], "KW" & KW_Num)
+              and Text.Contains([Name], "GL")
+              and Text.Contains([Name], "Update")
+        ),
 
-                                // Score pro Zeile: wie viele Tokens kommen in Produktname vor
-                                scored =
-                                    Table.AddColumn(
-                                        t,
-                                        "_ScoreKW",
-                                        each
-                                            let
-                                                pn = Text.Lower(Text.Clean(Text.From([Produktname]))),
-                                                hits = List.Transform(tokens, (tok) => if tok <> "" and Text.Contains(pn, tok) then 1 else 0)
-                                            in
-                                                List.Sum(hits),
-                                        Int64.Type
-                                    ),
+    // 5) Neueste Datei nehmen
+    Picked   = Table.Sort(Filtered, {{"Date modified", Order.Descending}}){0},
+    FullPath = Picked[Folder Path] & Picked[Name],
 
-                                // Tie-breaker: erst Score desc, dann Länge Produktname desc
-                                scored2 =
-                                    Table.AddColumn(
-                                        scored,
-                                        "_LenPN",
-                                        each Text.Length(Text.From([Produktname])),
-                                        Int64.Type
-                                    ),
+    // 6) PDF Tabellen lesen und Table001 nehmen
+    PdfTables = Pdf.Tables(File.Contents(FullPath)),
+    Table001  = PdfTables{[Id="Table001"]}[Data]
+in
+    Table001
 
-                                sorted = Table.Sort(scored2, {{"_ScoreKW", Order.Descending}, {"_LenPN", Order.Descending}}),
 
-                                top1 = Table.FirstN(sorted, 1),
 
-                                cleaned = Table.RemoveColumns(top1, {"_ScoreKW", "_LenPN"})
-                            in
-                                cleaned
-                in
-                    res
-        )
-    )
+let
+    Source = q_PDF_Table001,
+
+    // === 9 Kennzahlen links, Wert 2026 steht in Column3 ===
+    // ВАЖНО: Здесь должно быть РОВНО 9 строк.
+    NeededKeys = {
+        "Umsatz PLAN m€",
+        "Umsatz IST/FC m€",
+        "Aktionsumsatz m€",
+        "davon ungelistet m€",
+        "Aktionsanteil ungelistet %",
+        "Regelumsatz m€",
+        "Aktions-Mehr m€",
+        "Aktionsspanne %",
+        "Regalspanne %"
+        // "Aktionsanteil %"  <-- если он тоже нужен, добавь, но тогда убери какой-то другой, чтобы осталось 9
+    },
+
+    LeftBlock =
+        Table.SelectRows(Source, each List.Contains(NeededKeys, [Column1])),
+
+    LeftResult =
+        Table.SelectColumns(LeftBlock, {"Column1", "Column3"}),
+    LeftRenamed =
+        Table.RenameColumns(LeftResult, {{"Column1","Key"},{"Column3","Value"}}),
+
+    // === 10-е значение: NMDax из _3 ===
+    // Ты сказал: "_3, строка 15". Это позиционный вариант (менее устойчивый).
+    // Индекс в PQ начинается с 0, поэтому "строка 15" = index 14.
+    WithIndex = Table.AddIndexColumn(Source, "RowIndex", 0, 1, Int64.Type),
+    NMDaxRow  = Table.SelectRows(WithIndex, each [RowIndex] = 14),
+    NMDaxVal  = try NMDaxRow{0}[_3] otherwise null,
+
+    NMDaxResult =
+        #table({"Key","Value"}, {{"NMDax", NMDaxVal}}),
+
+    Result = Table.Combine({LeftRenamed, NMDaxResult})
+in
+    Result
+
+
+=XVERWEIS("NMDax";tblPQ[Key];tblPQ[Value])
+
+
