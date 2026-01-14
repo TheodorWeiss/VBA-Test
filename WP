@@ -1,49 +1,7 @@
 let
-    Source = Excel.CurrentWorkbook(){[Name="pKW"]}[Content],
-    KW_Text = Source{0}[Column1]
-in
-    KW_Text
-
-let
-    // 1) KW aus L1 (Named Range pKW -> Query p_KW)
-    KW_Text = p_KW,                    // z.B. "02/2026"
-    KW_Num  = Text.Start(KW_Text, 2),  // "02"
-
-    // 2) Basis-Pfad (ANPASSEN)
-    BasePath   = "\\\\SERVER\\Kennzahlen\\",
-    WeekFolder = "KW" & KW_Num & " 26",
-
-    // 3) Dateien im Wochenordner
-    Files = Folder.Files(BasePath & WeekFolder),
-
-    // 4) Passende PDF-Datei finden
-    Filtered =
-        Table.SelectRows(
-            Files,
-            each [Extension] = ".pdf"
-              and Text.Contains([Name], "Kennzahlen HZ")
-              and Text.Contains([Name], "KW" & KW_Num)
-              and Text.Contains([Name], "GL")
-              and Text.Contains([Name], "Update")
-        ),
-
-    // 5) Neueste Datei nehmen
-    Picked   = Table.Sort(Filtered, {{"Date modified", Order.Descending}}){0},
-    FullPath = Picked[Folder Path] & Picked[Name],
-
-    // 6) PDF Tabellen lesen und Table001 nehmen
-    PdfTables = Pdf.Tables(File.Contents(FullPath)),
-    Table001  = PdfTables{[Id="Table001"]}[Data]
-in
-    Table001
-
-
-
-let
     Source = q_PDF_Table001,
 
-    // === 9 Kennzahlen links, Wert 2026 steht in Column3 ===
-    // ВАЖНО: Здесь должно быть РОВНО 9 строк.
+    // --- 9 значений слева (2026 = Column3) ---
     NeededKeys = {
         "Umsatz PLAN m€",
         "Umsatz IST/FC m€",
@@ -54,32 +12,37 @@ let
         "Aktions-Mehr m€",
         "Aktionsspanne %",
         "Regalspanne %"
-        // "Aktionsanteil %"  <-- если он тоже нужен, добавь, но тогда убери какой-то другой, чтобы осталось 9
     },
 
     LeftBlock =
-        Table.SelectRows(Source, each List.Contains(NeededKeys, [Column1])),
+        Table.SelectRows(
+            Source,
+            each List.Contains(NeededKeys, [Column1])
+        ),
 
     LeftResult =
-        Table.SelectColumns(LeftBlock, {"Column1", "Column3"}),
-    LeftRenamed =
-        Table.RenameColumns(LeftResult, {{"Column1","Key"},{"Column3","Value"}}),
+        Table.RenameColumns(
+            Table.SelectColumns(LeftBlock, {"Column1", "Column3"}),
+            {{"Column1","Key"},{"Column3","Value"}}
+        ),
 
-    // === 10-е значение: NMDax из _3 ===
-    // Ты сказал: "_3, строка 15". Это позиционный вариант (менее устойчивый).
-    // Индекс в PQ начинается с 0, поэтому "строка 15" = index 14.
-    WithIndex = Table.AddIndexColumn(Source, "RowIndex", 0, 1, Int64.Type),
-    NMDaxRow  = Table.SelectRows(WithIndex, each [RowIndex] = 14),
-    NMDaxVal  = try NMDaxRow{0}[_3] otherwise null,
+    // --- 10-е значение: NMDax (правый блок, Column8) ---
+    NMDaxRow =
+        Table.SelectRows(
+            Source,
+            each [Column6] = "NMDax"
+        ),
+
+    NMDaxValue =
+        try NMDaxRow{0}[Column8] otherwise null,
 
     NMDaxResult =
-        #table({"Key","Value"}, {{"NMDax", NMDaxVal}}),
+        #table(
+            {"Key","Value"},
+            {{"NMDax", NMDaxValue}}
+        ),
 
-    Result = Table.Combine({LeftRenamed, NMDaxResult})
+    Result =
+        Table.Combine({LeftResult, NMDaxResult})
 in
     Result
-
-
-=XVERWEIS("NMDax";tblPQ[Key];tblPQ[Value])
-
-
