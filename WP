@@ -1,48 +1,39 @@
 let
-    Source = q_PDF_Table001,
+    Source = q_Orange_Source,
 
-    // --- 9 значений слева (2026 = Column3) ---
-    NeededKeys = {
-        "Umsatz PLAN m€",
-        "Umsatz IST/FC m€",
-        "Aktionsumsatz m€",
-        "davon ungelistet m€",
-        "Aktionsanteil ungelistet %",
-        "Regelumsatz m€",
-        "Aktions-Mehr m€",
-        "Aktionsspanne %",
-        "Regalspanne %"
-    },
+    // Если в q_Orange_Source уже выбран лист и видна "матрица",
+    // тогда Source — это таблица с колонками Column1..ColumnN.
+    // Ниже делаем индексацию строк и берём значения по (RowIndex, ColName).
 
-    LeftBlock =
-        Table.SelectRows(
-            Source,
-            each List.Contains(NeededKeys, [Column1])
-        ),
+    WithRowIndex = Table.AddIndexColumn(Source, "RowIndex", 1, 1, Int64.Type),
 
-    LeftResult =
-        Table.RenameColumns(
-            Table.SelectColumns(LeftBlock, {"Column1", "Column3"}),
-            {{"Column1","Key"},{"Column3","Value"}}
-        ),
+    GetCell = (row as number, col as text) as any =>
+        let
+            r = Table.SelectRows(WithRowIndex, each [RowIndex] = row),
+            v = if Table.RowCount(r)=0 then null else Record.Field(r{0}, col)
+        in
+            v,
 
-    // --- 10-е значение: NMDax (правый блок, Column8) ---
-    NMDaxRow =
-        Table.SelectRows(
-            Source,
-            each [Column6] = "NMDax"
-        ),
+    // === ВПИШИ ЗДЕСЬ КООРДИНАТЫ 4 ЯЧЕЕК ===
+    // RowIndex — номер строки в импортированной матрице (как в PQ после импорта листа)
+    // col — имя столбца, обычно "Column1", "Column2", ... (зависит от PQ)
 
-    NMDaxValue =
-        try NMDaxRow{0}[Column8] otherwise null,
-
-    NMDaxResult =
-        #table(
-            {"Key","Value"},
-            {{"NMDax", NMDaxValue}}
-        ),
+    v1 = GetCell( /*row*/ 23 , /*col*/ "Column6"),
+    v2 = GetCell( /*row*/ 23 , /*col*/ "Column8"),
+    v3 = GetCell( /*row*/ 23 , /*col*/ "Column13"),
+    v4 = GetCell( /*row*/ 23 , /*col*/ "Column16"),
 
     Result =
-        Table.Combine({LeftResult, NMDaxResult})
+        #table(
+            {"Key","Value"},
+            {
+                {"Orange_1", v1},
+                {"Orange_2", v2},
+                {"Orange_3", v3},
+                {"Orange_4", v4}
+            }
+        )
 in
     Result
+
+=XVERWEIS("Orange_1";tblOrange[Key];tblOrange[Value])
