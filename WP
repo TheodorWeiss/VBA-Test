@@ -1,46 +1,71 @@
-// 1) Временный флаг: безалкогольный ли Produktname
-#"IsNA hinzugefügt" =
-    Table.AddColumn(
-        #"Erweiterte tbl_Drotax1",
-        "IsNA",
-        each
-            let
-                pn = Text.Lower(Text.From([Produktname]))
-            in
-                Text.Contains(pn, "alkoholfrei")
-                or Text.Contains(pn, "0,0")
-                or Text.Contains(pn, "0.0"),
-        type logical
-    ),
-
-// 2) Применяем правила только для Kategorie = "BIE" внутри каждого Row_ID
-#"BIE Alk-Regeln angewendet" =
+// 4) Für BIE + AF+ + Slash=0: pro Row_ID genau 1 beste Zeile wählen (Score über Keyword_Drotax-Tokens)
+#"AF+ Slash0 Top1 gewählt" =
     Table.Combine(
         Table.TransformRows(
-            Table.Group(#"IsNA hinzugefügt", {"Row_ID"}, {{"t", each _, type table}}),
+            Table.Group(#"IsNA entfernt", {"Row_ID"}, {{"t", each _, type table}}),
             (r) =>
                 let
                     t = r[t],
 
-                    // считаем, что эти поля константны внутри Row_ID (они из Wechsler)
-                    kat = try Text.From(t[Kategorie]{0}) otherwise null,
-                    af  = try Text.From(t[AlkFlag]{0}) otherwise null,
+                    // robustes Lesen von Kategorie / AlkFlag / Slash / Keyword_Drotax
+                    kat =
+                        let
+                            k1 = try Text.From(t[Kategorie]{0}) otherwise null,
+                            k2 = try Text.From(t[#"Kategorie.1"]{0}) otherwise null
+                        in
+                            if k1 <> null and k1 <> "" then Text.Trim(Text.Clean(k1)) else Text.Trim(Text.Clean(k2)),
+
+                    af  = try Text.Trim(Text.Clean(Text.From(t[AlkFlag]{0}))) otherwise null,
                     sl  = try Number.From(t[Slash]{0}) otherwise null,
 
+                    kwD =
+                        let
+                            a = try Text.From(t[#"tbl_Segments.Keyword_Drotax"]{0}) otherwise null,
+                            b = try Text.From(t[Keyword_Drotax]{0}) otherwise null
+                        in
+                            if a <> null and a <> "" then a else b,
+
+                    // Nur in diesem Fall verdichten wir auf 1 Zeile
                     res =
-                        if kat <> "BIE" then
+                        if kat <> "BIE" or af <> "AF+" or sl <> 0 then
                             t
-                        else if af = "AF-" then
-                            Table.SelectRows(t, each [IsNA] <> true)
-                        else if af = "AF+" and sl = 0 then
-                            Table.SelectRows(t, each [IsNA] = true)
                         else
-                            t
+                            let
+                                // Keyword_Drotax in Tokens zerlegen (Whitespace), leere Tokens entfernen
+                                tokens0 = if kwD = null then {} else List.Select(Text.SplitAny(kwD, " "), each _ <> ""),
+                                tokens  = List.Transform(tokens0, each Text.Lower(Text.Clean(_))),
+
+                                // Score pro Zeile: wie viele Tokens kommen in Produktname vor
+                                scored =
+                                    Table.AddColumn(
+                                        t,
+                                        "_ScoreKW",
+                                        each
+                                            let
+                                                pn = Text.Lower(Text.Clean(Text.From([Produktname]))),
+                                                hits = List.Transform(tokens, (tok) => if tok <> "" and Text.Contains(pn, tok) then 1 else 0)
+                                            in
+                                                List.Sum(hits),
+                                        Int64.Type
+                                    ),
+
+                                // Tie-breaker: erst Score desc, dann Länge Produktname desc
+                                scored2 =
+                                    Table.AddColumn(
+                                        scored,
+                                        "_LenPN",
+                                        each Text.Length(Text.From([Produktname])),
+                                        Int64.Type
+                                    ),
+
+                                sorted = Table.Sort(scored2, {{"_ScoreKW", Order.Descending}, {"_LenPN", Order.Descending}}),
+
+                                top1 = Table.FirstN(sorted, 1),
+
+                                cleaned = Table.RemoveColumns(top1, {"_ScoreKW", "_LenPN"})
+                            in
+                                cleaned
                 in
                     res
         )
-    ),
-
-// 3) Убираем временную колонку
-#"IsNA entfernt" =
-    Table.RemoveColumns(#"BIE Alk-Regeln angewendet", {"IsNA"})
+    )
