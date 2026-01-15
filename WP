@@ -1,15 +1,31 @@
+(txt as nullable text) as text =>
 let
-    parts = Text.Split([Artikel Bez], "###"),
-    nums =
-        List.Transform(
-            parts,
-            each
-                let
-                    t = Text.Trim(_),
-                    n = Text.Select(t, {"0".."9"})
-                in
-                    if Text.Length(n) >= 4 then n else null
+    t = if txt = null then "" else txt,
+    chars = Text.ToList(t),
+
+    // Собираем цифровые "ранны"; добавляем в результат только если
+    // 1) длина >= 4
+    // 2) ранн заканчивается прямо перед ПРОБЕЛОМ (т.е. следующий символ = " ")
+    state =
+        List.Accumulate(
+            chars,
+            [cur = "", out = {}],
+            (s, c) =>
+                if c >= "0" and c <= "9" then
+                    [cur = s[cur] & c, out = s[out]]
+                else
+                    // ранн завершился перед символом c (который не цифра)
+                    // берём только если c = " "
+                    [cur = "",
+                     out = if Text.Length(s[cur]) >= 4 and c = " "
+                           then s[out] & {s[cur]}
+                           else s[out]]
         ),
-    cleaned = List.RemoveNulls(nums)
+
+    // ВАЖНО: если строка закончилась цифрами, мы НЕ добавляем (нет пробела после номера)
+    uniq = List.Distinct(state[out]),
+    res = Text.Combine(uniq, ";")
 in
-    Text.Combine(cleaned, ";")
+    res
+
+fxExtractNums4Space([Artikel Bez])
