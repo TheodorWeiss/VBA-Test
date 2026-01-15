@@ -1,3 +1,15 @@
-=TEXT(KALENDERWOCHE(HEUTE();21);"00")&"/"&JAHR(HEUTE()-WOCHENTAG(HEUTE();2)+4)
-
-=TEXT(KALENDERWOCHE(HEUTE();21);"00")&"/"&JAHR(HEUTE())
+let
+    parts = Text.Split([Artikel Bez], "###"),
+    nums =
+        List.Transform(
+            parts,
+            each
+                let
+                    t = Text.Trim(_),
+                    n = Text.Select(t, {"0".."9"})
+                in
+                    if Text.Length(n) >= 4 then n else null
+        ),
+    cleaned = List.RemoveNulls(nums)
+in
+    Text.Combine(cleaned, ";")
