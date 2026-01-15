@@ -1,31 +1,55 @@
 (txt as nullable text) as text =>
 let
-    t = if txt = null then "" else txt,
-    chars = Text.ToList(t),
+    t0 = if txt = null then "" else txt,
 
-    // Собираем цифровые "ранны"; добавляем в результат только если
-    // 1) длина >= 4
-    // 2) ранн заканчивается прямо перед ПРОБЕЛОМ (т.е. следующий символ = " ")
-    state =
-        List.Accumulate(
-            chars,
-            [cur = "", out = {}],
-            (s, c) =>
-                if c >= "0" and c <= "9" then
-                    [cur = s[cur] & c, out = s[out]]
-                else
-                    // ранн завершился перед символом c (который не цифра)
-                    // берём только если c = " "
-                    [cur = "",
-                     out = if Text.Length(s[cur]) >= 4 and c = " "
-                           then s[out] & {s[cur]}
-                           else s[out]]
-        ),
+    // Разбиваем по твоему стабильному разделителю
+    segs = Text.Split(t0, "###"),
 
-    // ВАЖНО: если строка закончилась цифрами, мы НЕ добавляем (нет пробела после номера)
-    uniq = List.Distinct(state[out]),
-    res = Text.Combine(uniq, ";")
+    // Функция: из одного сегмента вытаскиваем ПЕРВЫЙ номер по правилу: " пробел + >=4 цифр + пробел "
+    FirstArtikelInSeg = (seg as text) as nullable text =>
+    let
+        s = " " & Text.Trim(seg) & " ",   // добавляем пробелы по краям, чтобы корректно ловить границы
+        chars = Text.ToList(s),
+
+        // Бежим слева направо и ищем первый digit-run длиной>=4,
+        // который стоит между пробелами: prev=" " и next=" "
+        scan =
+            List.Accumulate(
+                {0..List.Count(chars)-1},
+                [cur="", prev=" ", found=null],
+                (st, i) =>
+                    if st[found] <> null then
+                        st
+                    else
+                        let
+                            c = chars{i},
+                            isDigit = c >= "0" and c <= "9",
+                            next = if i < List.Count(chars)-1 then chars{i+1} else null
+                        in
+                            if isDigit then
+                                // продолжаем ранн цифр
+                                [cur = st[cur] & c, prev = st[prev], found = null]
+                            else
+                                // ранн закончился на st[cur], текущий символ c — НЕ цифра
+                                // валидируем ранн только если:
+                                // - длина >=4
+                                // - prev перед ранном был пробел
+                                // - текущий символ (после ранна) = пробел
+                                if Text.Length(st[cur]) >= 4 and st[prev] = " " and c = " " then
+                                    [cur = "", prev = c, found = st[cur]]
+                                else
+                                    [cur = "", prev = c, found = null]
+            ),
+
+        result = scan[found]
+    in
+        result,
+
+    // Применяем к каждому сегменту и берём только непустые
+    perSeg = List.Transform(segs, each FirstArtikelInSeg(_)),
+    cleaned = List.RemoveNulls(perSeg),
+
+    // Склеиваем в список
+    res = Text.Combine(cleaned, ";")
 in
     res
-
-fxExtractNums4Space([Artikel Bez])
