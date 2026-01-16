@@ -1,13 +1,13 @@
 Option Explicit
 
 Public Sub FilterPivot_Artikelnummer_FromTable()
-    ' Filters the PivotTable field "Artikelnummer" based on values from Excel table tbl_Artikel[Artikelnummer].
-    ' Works for both OLAP and non-OLAP PivotTables.
+    ' Filters the first RowField of the active PivotTable using values from tbl_Artikel[Artikelnummer].
+    ' This avoids PivotFields("...") name issues (common with external/OLAP pivots).
 
     Dim pt As PivotTable
     Dim pf As PivotField
-    Dim lo As ListObject
     Dim wsList As Worksheet
+    Dim lo As ListObject
     Dim dict As Object
     Dim r As Range
     Dim key As String
@@ -23,32 +23,29 @@ Public Sub FilterPivot_Artikelnummer_FromTable()
     Application.EnableEvents = False
     Application.Calculation = xlCalculationManual
 
-    ' 1) Get the PivotTable safely:
-    '    - First try ActiveCell.PivotTable
-    '    - If that fails, take the first PivotTable on the active sheet
+    ' Get PivotTable safely
     Set pt = GetPivotTableSafe()
     If pt Is Nothing Then
         MsgBox "No PivotTable found. Click inside the PivotTable and run the macro again.", vbExclamation
         GoTo Cleanup
     End If
 
-    ' 2) Get the PivotField by caption (as shown in the field list)
-    Set pf = pt.PivotFields("Artikelnummer")
+    ' Use the first RowField (your Artikelnummer field)
+    If pt.RowFields.Count = 0 Then
+        MsgBox "The PivotTable has no RowFields. Put Artikelnummer into Rows and try again.", vbExclamation
+        GoTo Cleanup
+    End If
+    Set pf = pt.RowFields(1)
 
-    ' 3) Get the Excel table with the desired Artikelnummer list
+    ' Get the list table
     Set wsList = FindTableSheet("tbl_Artikel")
     If wsList Is Nothing Then
         MsgBox "Table 'tbl_Artikel' was not found in this workbook.", vbExclamation
         GoTo Cleanup
     End If
-
     Set lo = wsList.ListObjects("tbl_Artikel")
-    If lo.ListColumns.Count = 0 Then
-        MsgBox "Table 'tbl_Artikel' has no columns.", vbExclamation
-        GoTo Cleanup
-    End If
 
-    ' 4) Load Artikelnummer values into a dictionary for fast lookup
+    ' Load list values into dictionary (normalize to text without spaces)
     Set dict = CreateObject("Scripting.Dictionary")
     dict.CompareMode = 1 ' TextCompare
 
@@ -58,7 +55,7 @@ Public Sub FilterPivot_Artikelnummer_FromTable()
     End If
 
     For Each r In lo.ListColumns("Artikelnummer").DataBodyRange.Cells
-        key = Trim(CStr(r.Value))
+        key = NormalizeKey(r.Value)
         If Len(key) > 0 Then dict(key) = True
     Next r
 
@@ -67,22 +64,20 @@ Public Sub FilterPivot_Artikelnummer_FromTable()
         GoTo Cleanup
     End If
 
-    ' 5) Apply the filter
-    pt.ManualUpdate = True
-
-    ' Determine if this is an OLAP pivot (Power BI / Analysis Services)
+    ' Detect OLAP
     isOlap = False
     On Error Resume Next
     isOlap = pt.PivotCache.OLAP
     On Error GoTo ErrHandler
 
+    pt.ManualUpdate = True
     pf.ClearAllFilters
 
     If isOlap Then
-        ' OLAP: use VisibleItemsList (requires item unique names)
+        ' OLAP: use VisibleItemsList with item names
         cnt = 0
         For Each pi In pf.PivotItems
-            If dict.Exists(Trim(CStr(pi.Caption))) Then
+            If dict.Exists(NormalizeKey(pi.Caption)) Then
                 cnt = cnt + 1
                 ReDim Preserve arr(1 To cnt)
                 arr(cnt) = pi.Name
@@ -90,21 +85,20 @@ Public Sub FilterPivot_Artikelnummer_FromTable()
         Next pi
 
         If cnt = 0 Then
-            MsgBox "No matching Artikelnummer found in the PivotField. Check number format (text vs number).", vbExclamation
+            MsgBox "No matching items found. Check number formatting (text vs number) and leading zeros.", vbExclamation
             GoTo CleanupPivot
         End If
 
         pf.VisibleItemsList = arr
+        MsgBox "Filter applied (OLAP): " & cnt & " items.", vbInformation
 
     Else
-        ' Non-OLAP: set PivotItems visibility directly
-        ' Important: Excel does not allow hiding all items at once, so we keep one item visible first.
+        ' Non-OLAP: toggle PivotItems visibility
         Dim firstVisibleSet As Boolean
         firstVisibleSet = False
 
-        ' First pass: hide items not in the list; keep at least one visible to avoid errors
         For Each pi In pf.PivotItems
-            If dict.Exists(Trim(CStr(pi.Caption))) Then
+            If dict.Exists(NormalizeKey(pi.Caption)) Then
                 If Not firstVisibleSet Then
                     pi.Visible = True
                     firstVisibleSet = True
@@ -117,18 +111,19 @@ Public Sub FilterPivot_Artikelnummer_FromTable()
         Next pi
 
         If Not firstVisibleSet Then
-            MsgBox "No matching Artikelnummer found in the PivotField. Check number format (text vs number).", vbExclamation
+            MsgBox "No matching items found. Check number formatting (text vs number) and leading zeros.", vbExclamation
             GoTo CleanupPivot
         End If
 
-        ' Second pass: ensure all matching items are visible
         For Each pi In pf.PivotItems
-            If dict.Exists(Trim(CStr(pi.Caption))) Then
+            If dict.Exists(NormalizeKey(pi.Caption)) Then
                 On Error Resume Next
                 pi.Visible = True
                 On Error GoTo ErrHandler
             End If
         Next pi
+
+        MsgBox "Filter applied (non-OLAP).", vbInformation
     End If
 
 CleanupPivot:
@@ -137,12 +132,6 @@ CleanupPivot:
     pt.RefreshTable
     On Error GoTo 0
 
-    If cnt > 0 Then
-        MsgBox "Filter applied: " & cnt & " Artikelnummer.", vbInformation
-    Else
-        MsgBox "Filter applied.", vbInformation
-    End If
-
 Cleanup:
     Application.ScreenUpdating = True
     Application.EnableEvents = True
@@ -150,13 +139,29 @@ Cleanup:
     Exit Sub
 
 ErrHandler:
-    ' Generic error handler
     MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
     Resume Cleanup
 End Sub
 
+Private Function NormalizeKey(ByVal v As Variant) As String
+    ' Normalizes keys to improve matching across text/number formats.
+    ' - trims spaces
+    ' - converts numbers to integer-like text if possible
+    Dim s As String
+    s = Trim(CStr(v))
+
+    ' If it looks numeric, remove decimal part like "1349.0"
+    If Len(s) > 0 And IsNumeric(s) Then
+        ' Use CLng to remove .0, but keep large ids as text
+        On Error Resume Next
+        s = CStr(CLng(CDbl(s)))
+        On Error GoTo 0
+    End If
+
+    NormalizeKey = s
+End Function
+
 Private Function GetPivotTableSafe() As PivotTable
-    ' Tries to get PivotTable from ActiveCell; if not possible, returns the first PivotTable on ActiveSheet.
     Dim pt As PivotTable
     On Error Resume Next
     Set pt = ActiveCell.PivotTable
@@ -176,7 +181,6 @@ Private Function GetPivotTableSafe() As PivotTable
 End Function
 
 Private Function FindTableSheet(ByVal tableName As String) As Worksheet
-    ' Finds the worksheet that contains a given ListObject (Excel table).
     Dim ws As Worksheet
     For Each ws In ActiveWorkbook.Worksheets
         On Error Resume Next
