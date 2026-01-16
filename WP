@@ -1,19 +1,21 @@
-Option Explicit
-
 Public Sub FilterPivot_Artikelnummer_FromTable()
-    ' Filters an OLAP PivotTable field [Artikelnummer] using values from Excel table tbl_Artikel[Artikelnummer].
+    ' Applies an OLAP filter on Artikelnummer using UniqueNames of PivotItems (safe for OLAP).
+    ' Reads desired Artikelnummer values from tbl_Artikel[Artikelnummer] (captions), then maps to PivotItem.Name.
 
     Dim pt As PivotTable
     Dim cf As CubeField
     Dim pf As PivotField
+
     Dim lo As ListObject
     Dim lc As ListColumn
-    Dim dict As Object
+    Dim dictWanted As Object
+
     Dim r As Range
+    Dim pi As PivotItem
 
     Dim arr() As Variant
-    Dim i As Long
-    Dim key As Variant
+    Dim cnt As Long
+    Dim captionKey As String
 
     On Error GoTo ErrHandler
 
@@ -34,17 +36,19 @@ Public Sub FilterPivot_Artikelnummer_FromTable()
     If lc Is Nothing Then Err.Raise vbObjectError + 4, , "Column 'Artikelnummer' not found in tbl_Artikel."
     If lc.DataBodyRange Is Nothing Then Err.Raise vbObjectError + 5, , "tbl_Artikel[Artikelnummer] has no rows."
 
-    ' 3) Load values into dictionary
-    Set dict = CreateObject("Scripting.Dictionary")
-    dict.CompareMode = 1 ' TextCompare
+    ' 3) Load wanted captions into dictionary
+    Set dictWanted = CreateObject("Scripting.Dictionary")
+    dictWanted.CompareMode = 1 ' TextCompare
 
     For Each r In lc.DataBodyRange.Cells
-        If Len(Trim$(CStr(r.Value))) > 0 Then dict(Trim$(CStr(r.Value))) = True
+        captionKey = Trim$(CStr(r.Value))
+        If Len(captionKey) > 0 Then dictWanted(captionKey) = True
     Next r
 
-    If dict.Count = 0 Then Err.Raise vbObjectError + 6, , "No values in tbl_Artikel[Artikelnummer]."
+    If dictWanted.Count = 0 Then Err.Raise vbObjectError + 6, , "No values in tbl_Artikel[Artikelnummer]."
 
-    ' 4) Find CubeField
+    ' 4) Find CubeField containing Artikelnummer
+    Set cf = Nothing
     For Each cf In pt.CubeFields
         If InStr(1, cf.Name, "Artikelnummer", vbTextCompare) > 0 Then Exit For
     Next cf
@@ -53,13 +57,20 @@ Public Sub FilterPivot_Artikelnummer_FromTable()
 
     Set pf = cf.PivotFields(1)
 
-    ' 5) Build VisibleItemsList
-    ReDim arr(1 To dict.Count)
-    i = 1
-    For Each key In dict.Keys
-        arr(i) = CStr(key)
-        i = i + 1
-    Next key
+    ' 5) Build list of UniqueNames (PivotItem.Name) for items whose Caption is in our wanted list
+    cnt = 0
+    For Each pi In pf.PivotItems
+        captionKey = Trim$(CStr(pi.Caption))
+        If dictWanted.Exists(captionKey) Then
+            cnt = cnt + 1
+            ReDim Preserve arr(1 To cnt)
+            arr(cnt) = pi.Name ' IMPORTANT: OLAP UniqueName, not the caption
+        End If
+    Next pi
+
+    If cnt = 0 Then
+        Err.Raise vbObjectError + 9, , "No matches found. Likely caption mismatch (e.g., leading zeros)."
+    End If
 
     ' 6) Apply filter
     On Error Resume Next
@@ -69,7 +80,7 @@ Public Sub FilterPivot_Artikelnummer_FromTable()
     pf.VisibleItemsList = arr
     pt.RefreshTable
 
-    MsgBox "Filter applied. Selected items: " & dict.Count, vbInformation
+    MsgBox "Filter applied using OLAP UniqueNames. Selected items: " & cnt & " (from list: " & dictWanted.Count & ")", vbInformation
 
 Cleanup:
     Application.ScreenUpdating = True
@@ -81,33 +92,3 @@ ErrHandler:
     MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
     Resume Cleanup
 End Sub
-
-
-Private Function GetPivotTableSafe() As PivotTable
-    Dim pt As PivotTable
-    On Error Resume Next
-    Set pt = ActiveCell.PivotTable
-    On Error GoTo 0
-
-    If Not pt Is Nothing Then
-        Set GetPivotTableSafe = pt
-    ElseIf ActiveSheet.PivotTables.Count > 0 Then
-        Set GetPivotTableSafe = ActiveSheet.PivotTables(1)
-    Else
-        Set GetPivotTableSafe = Nothing
-    End If
-End Function
-
-
-Private Function FindListObject(ByVal tableName As String) As ListObject
-    Dim ws As Worksheet, lo As ListObject
-    For Each ws In ThisWorkbook.Worksheets
-        For Each lo In ws.ListObjects
-            If StrComp(lo.Name, tableName, vbTextCompare) = 0 Then
-                Set FindListObject = lo
-                Exit Function
-            End If
-        Next lo
-    Next ws
-    Set FindListObject = Nothing
-End Function
