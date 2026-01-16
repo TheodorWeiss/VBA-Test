@@ -1,219 +1,109 @@
 Option Explicit
 
-'========================
-' USER SETTINGS (adjust if needed)
-'========================
-Private Const LIST_TABLE_NAME As String = "tbl_Artikel"
-Private Const LIST_COLUMN_NAME As String = "Artikelnummer"
-' The slicer cache name will be detected automatically.
-'========================
+Public Sub Slicer_Info()
+    ' Prints slicer technical names to the Immediate Window (Ctrl+G).
+    ' Also shows a small message with the first match for Artikelnummer.
 
-
-'------------------------
-' STEP A: Run this once after you manually created the slicer for Artikelnummer.
-' It will detect the slicer cache and show its name (so we know VBA sees it).
-'------------------------
-Public Sub DetectArtikelnummerSlicer()
-    Dim pt As PivotTable
     Dim sc As SlicerCache
-    Dim msg As String
+    Dim sl As Slicer
 
-    Set pt = GetPivotTableSafe()
-    If pt Is Nothing Then
-        MsgBox "No PivotTable found. Click any cell inside the PivotTable and run again.", vbExclamation
-        Exit Sub
-    End If
+    Debug.Print "---- SLICER CACHES ----"
+    For Each sc In ActiveWorkbook.SlicerCaches
+        Debug.Print "SlicerCache.Name = " & sc.Name & " | SourceName = " & sc.SourceName
+        For Each sl In sc.Slicers
+            Debug.Print "   Slicer.Name = " & sl.Name & " | Caption = " & sl.Caption
+        Next sl
+    Next sc
 
-    Set sc = FindSlicerCacheForPivotField(pt, "Artikelnummer")
-    If sc Is Nothing Then
-        MsgBox "Could not find a slicer for field 'Artikelnummer'." & vbCrLf & _
-               "Please create a slicer (Datenschnitt) for Artikelnummer first, then run again.", vbExclamation
-        Exit Sub
-    End If
-
-    msg = "Slicer cache found:" & vbCrLf & _
-          "Name: " & sc.Name & vbCrLf & _
-          "SourceName: " & sc.SourceName
-    MsgBox msg, vbInformation
+    MsgBox "Slicer info printed to Immediate Window (Ctrl+G).", vbInformation
 End Sub
 
 
-'------------------------
-' STEP B: Main macro
-' Reads Artikelnummer list from tbl_Artikel[Artikelnummer]
-' and applies the filter via the slicer (works with OLAP pivots).
-'------------------------
-Public Sub ApplyArtikelnummerFilter_FromTable_UsingSlicer()
-    Dim pt As PivotTable
-    Dim sc As SlicerCache
+Public Sub Slicer_Filter_Artikelnummer_FromTable()
+    ' Filters an OLAP slicer by matching slicer item captions to values in tbl_Artikel[Artikelnummer].
+    ' No need to know technical slicer names; it searches by SourceName containing "Artikelnummer".
+
+    Dim stepName As String
     Dim lo As ListObject
+    Dim rng As Range
     Dim dict As Object
-    Dim c As Range
-    Dim cap As String
+    Dim sc As SlicerCache
+    Dim si As SlicerItem
+    Dim names() As String
+    Dim cnt As Long
+    Dim k As Variant
 
-    Dim selNames() As String
-    Dim n As Long
+    On Error GoTo ErrHandler
 
-    Application.ScreenUpdating = False
-    Application.EnableEvents = False
-
-    On Error GoTo CleanFail
-
-    Set pt = GetPivotTableSafe()
-    If pt Is Nothing Then
-        MsgBox "No PivotTable found. Click any cell inside the PivotTable and run again.", vbExclamation
-        GoTo CleanExit
-    End If
-
-    ' Find the slicer cache connected to Artikelnummer
-    Set sc = FindSlicerCacheForPivotField(pt, "Artikelnummer")
-    If sc Is Nothing Then
-        MsgBox "Slicer for 'Artikelnummer' not found. Create the slicer first, then run again.", vbExclamation
-        GoTo CleanExit
-    End If
-
-    ' Get the list table and build a dictionary of desired Artikelnummer values (as text)
-    Set lo = FindListObjectAnywhere(LIST_TABLE_NAME)
-    If lo Is Nothing Then
-        MsgBox "Table '" & LIST_TABLE_NAME & "' not found.", vbExclamation
-        GoTo CleanExit
-    End If
-
-    If lo.ListColumns.Count = 0 Then
-        MsgBox "Table '" & LIST_TABLE_NAME & "' has no columns.", vbExclamation
-        GoTo CleanExit
-    End If
-
-    If Not HasListColumn(lo, LIST_COLUMN_NAME) Then
-        MsgBox "Column '" & LIST_COLUMN_NAME & "' not found in table '" & LIST_TABLE_NAME & "'.", vbExclamation
-        GoTo CleanExit
-    End If
+    ' 1) Get the table and column with the desired Artikelnummer list
+    stepName = "Get tbl_Artikel and column Artikelnummer"
+    Set lo = ActiveWorkbook.ListObjects("tbl_Artikel")
+    Set rng = lo.ListColumns("Artikelnummer").DataBodyRange
 
     Set dict = CreateObject("Scripting.Dictionary")
     dict.CompareMode = 1 ' TextCompare
 
-    For Each c In lo.ListColumns(LIST_COLUMN_NAME).DataBodyRange.Cells
-        cap = Trim$(CStr(c.Value))
-        If Len(cap) > 0 Then
-            If Not dict.Exists(cap) Then dict.Add cap, True
+    ' 2) Load desired values into a dictionary (as strings)
+    stepName = "Load Artikelnummer list into dictionary"
+    Dim c As Range, v As String
+    For Each c In rng.Cells
+        v = Trim$(CStr(c.Value))
+        If Len(v) > 0 Then
+            dict(v) = True
         End If
     Next c
 
     If dict.Count = 0 Then
-        MsgBox "No Artikelnummer values found in '" & LIST_TABLE_NAME & "[" & LIST_COLUMN_NAME & "]'.", vbExclamation
-        GoTo CleanExit
+        MsgBox "tbl_Artikel[Artikelnummer] is empty.", vbExclamation
+        Exit Sub
     End If
 
-    ' Map captions -> slicer item unique names (OLAP needs item .Name, not caption)
-    n = 0
-    Dim si As SlicerItem
+    ' 3) Find the OLAP slicer cache for Artikelnummer
+    stepName = "Find SlicerCache for Artikelnummer"
+    Set sc = Nothing
+
+    For Each sc In ActiveWorkbook.SlicerCaches
+        ' SourceName for OLAP often contains something like: [Artikel].[Artikelnummer]
+        If InStr(1, sc.SourceName, "Artikelnummer", vbTextCompare) > 0 Then
+            Exit For
+        End If
+    Next
+
+    If sc Is Nothing Then
+        MsgBox "No SlicerCache found where SourceName contains 'Artikelnummer'. Run Slicer_Info first.", vbExclamation
+        Exit Sub
+    End If
+
+    ' 4) Collect OLAP unique names of slicer items whose Caption matches our list
+    stepName = "Collect matching slicer item unique names"
+    cnt = 0
+    ReDim names(1 To dict.Count)
+
     For Each si In sc.SlicerItems
-        If si.HasData Then
-            If dict.Exists(Trim$(CStr(si.Caption))) Then
-                n = n + 1
-                ReDim Preserve selNames(1 To n)
-                selNames(n) = si.Name
-            End If
+        ' si.Caption is what you see in the slicer buttons (e.g., 1349)
+        If dict.Exists(Trim$(CStr(si.Caption))) Then
+            cnt = cnt + 1
+            names(cnt) = si.Name ' For OLAP, this is the unique member name
         End If
     Next si
 
-    If n = 0 Then
-        MsgBox "None of the Artikelnummer values from your table were found in the slicer items." & vbCrLf & _
-               "Possible reasons:" & vbCrLf & _
-               "- Different formatting (e.g., leading zeros)" & vbCrLf & _
-               "- Artikelnummer in OLAP is not the same level you used" & vbCrLf & _
-               "- Your list contains values not present in the current cube scope", vbExclamation
-        GoTo CleanExit
+    If cnt = 0 Then
+        MsgBox "No matches found between tbl_Artikel[Artikelnummer] and slicer items." & vbCrLf & _
+               "Possible reason: different formatting (text vs number) or different codes in the cube.", vbExclamation
+        Exit Sub
     End If
 
-    ' Apply selection
+    ReDim Preserve names(1 To cnt)
+
+    ' 5) Apply the filter using VisibleSlicerItemsList (OLAP-safe way)
+    stepName = "Apply VisibleSlicerItemsList"
     sc.ClearManualFilter
-    sc.VisibleSlicerItemsList = selNames
+    sc.VisibleSlicerItemsList = names
 
-    MsgBox "Filter applied via slicer." & vbCrLf & _
-           "Selected items: " & n, vbInformation
-
-CleanExit:
-    Application.ScreenUpdating = True
-    Application.EnableEvents = True
+    MsgBox "OK. Selected " & cnt & " Artikelnummer in slicer.", vbInformation
     Exit Sub
 
-CleanFail:
-    MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
-    Resume CleanExit
+ErrHandler:
+    MsgBox "Failed at step: " & stepName & vbCrLf & _
+           "Error " & Err.Number & ": " & Err.Description, vbExclamation
 End Sub
-
-
-'========================
-' Helpers
-'========================
-
-' Returns PivotTable of the active cell (preferred). If not inside a pivot, tries first pivot on active sheet.
-Private Function GetPivotTableSafe() As PivotTable
-    On Error Resume Next
-    If Not ActiveCell Is Nothing Then
-        Set GetPivotTableSafe = ActiveCell.PivotTable
-        If Not GetPivotTableSafe Is Nothing Then Exit Function
-    End If
-    On Error GoTo 0
-
-    Dim ws As Worksheet
-    Set ws = ActiveSheet
-    If ws.PivotTables.Count > 0 Then
-        Set GetPivotTableSafe = ws.PivotTables(1)
-    End If
-End Function
-
-' Finds a slicer cache connected to the pivot and matching the field caption/name.
-Private Function FindSlicerCacheForPivotField(ByVal pt As PivotTable, ByVal fieldToken As String) As SlicerCache
-    Dim sc As SlicerCache
-    Dim token As String
-    token = LCase$(fieldToken)
-
-    ' Look through slicer caches and check:
-    ' - It is connected to our pivot
-    ' - Its SourceName contains the token (works for OLAP: e.g. [Artikel].[Artikelnummer]...)
-    For Each sc In ActiveWorkbook.SlicerCaches
-        If IsSlicerConnectedToPivot(sc, pt) Then
-            If InStr(1, LCase$(sc.SourceName), token, vbTextCompare) > 0 Then
-                Set FindSlicerCacheForPivotField = sc
-                Exit Function
-            End If
-        End If
-    Next sc
-End Function
-
-Private Function IsSlicerConnectedToPivot(ByVal sc As SlicerCache, ByVal pt As PivotTable) As Boolean
-    On Error Resume Next
-    Dim p As PivotTable
-    For Each p In sc.PivotTables
-        If p.Name = pt.Name And p.Parent.Name = pt.Parent.Name Then
-            IsSlicerConnectedToPivot = True
-            Exit Function
-        End If
-    Next p
-    On Error GoTo 0
-End Function
-
-Private Function FindListObjectAnywhere(ByVal loName As String) As ListObject
-    Dim ws As Worksheet
-    Dim lo As ListObject
-    For Each ws In ActiveWorkbook.Worksheets
-        For Each lo In ws.ListObjects
-            If StrComp(lo.Name, loName, vbTextCompare) = 0 Then
-                Set FindListObjectAnywhere = lo
-                Exit Function
-            End If
-        Next lo
-    Next ws
-End Function
-
-Private Function HasListColumn(ByVal lo As ListObject, ByVal colName As String) As Boolean
-    Dim lc As ListColumn
-    For Each lc In lo.ListColumns
-        If StrComp(lc.Name, colName, vbTextCompare) = 0 Then
-            HasListColumn = True
-            Exit Function
-        End If
-    Next lc
-End Function
