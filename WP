@@ -1,55 +1,92 @@
-(txt as nullable text) as text =>
-let
-    t0 = if txt = null then "" else txt,
+Option Explicit
 
-    // Разбиваем по твоему стабильному разделителю
-    segs = Text.Split(t0, "###"),
+Public Sub FilterPivot_Artikelnummer_FromTable()
+    Dim pt As PivotTable
+    Dim pf As PivotField
+    Dim lo As ListObject
+    Dim colName As String
+    Dim dict As Object
+    Dim r As Range
+    Dim key As String
+    
+    Dim i As Long
+    Dim pi As PivotItem
+    Dim arr() As Variant
+    Dim cnt As Long
+    
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+    
+    ' 1) Берем сводную из активной ячейки
+    If ActiveCell Is Nothing Or ActiveCell.PivotTable Is Nothing Then
+        MsgBox "Сначала кликни в любую ячейку сводной таблицы.", vbExclamation
+        GoTo Cleanup
+    End If
+    Set pt = ActiveCell.PivotTable
+    
+    ' 2) Имя поля в сводной (как на экране)
+    Set pf = pt.PivotFields("Artikelnummer")
+    
+    ' 3) Таблица со списком артикулов
+    '    ВАЖНО: таблица должна называться tbl_Artikel, колонка — Artikelnummer
+    Set lo = ActiveWorkbook.Worksheets(loSheetNameGuess()).ListObjects("tbl_Artikel")
+    colName = "Artikelnummer"
+    
+    Set dict = CreateObject("Scripting.Dictionary")
+    dict.CompareMode = 1 ' TextCompare
+    
+    ' 4) Читаем список артикулов в словарь
+    For Each r In lo.ListColumns(colName).DataBodyRange.Cells
+        key = Trim(CStr(r.Value))
+        If Len(key) > 0 Then dict(key) = True
+    Next r
+    
+    If dict.Count = 0 Then
+        MsgBox "В tbl_Artikel[Artikelnummer] пусто.", vbExclamation
+        GoTo Cleanup
+    End If
+    
+    ' 5) Собираем UniqueName тех PivotItems, чьи Caption есть в списке
+    cnt = 0
+    For Each pi In pf.PivotItems
+        If dict.Exists(Trim(CStr(pi.Caption))) Then
+            cnt = cnt + 1
+            ReDim Preserve arr(1 To cnt)
+            arr(cnt) = pi.Name ' в OLAP это обычно UniqueName, в обычной сводной тоже работает как идентификатор
+        End If
+    Next pi
+    
+    If cnt = 0 Then
+        MsgBox "Ни один Artikelnummer из списка не найден в сводной (проверь тип/формат номера).", vbExclamation
+        GoTo Cleanup
+    End If
+    
+    ' 6) Применяем фильтр
+    pt.ManualUpdate = True
+    pf.ClearAllFilters
+    pf.VisibleItemsList = arr
+    pt.ManualUpdate = False
+    pt.RefreshTable
+    
+    MsgBox "Фильтр применён: " & cnt & " Artikelnummer.", vbInformation
 
-    // Функция: из одного сегмента вытаскиваем ПЕРВЫЙ номер по правилу: " пробел + >=4 цифр + пробел "
-    FirstArtikelInSeg = (seg as text) as nullable text =>
-    let
-        s = " " & Text.Trim(seg) & " ",   // добавляем пробелы по краям, чтобы корректно ловить границы
-        chars = Text.ToList(s),
+Cleanup:
+    Application.ScreenUpdating = True
+    Application.EnableEvents = True
+    Application.Calculation = xlCalculationAutomatic
+End Sub
 
-        // Бежим слева направо и ищем первый digit-run длиной>=4,
-        // который стоит между пробелами: prev=" " и next=" "
-        scan =
-            List.Accumulate(
-                {0..List.Count(chars)-1},
-                [cur="", prev=" ", found=null],
-                (st, i) =>
-                    if st[found] <> null then
-                        st
-                    else
-                        let
-                            c = chars{i},
-                            isDigit = c >= "0" and c <= "9",
-                            next = if i < List.Count(chars)-1 then chars{i+1} else null
-                        in
-                            if isDigit then
-                                // продолжаем ранн цифр
-                                [cur = st[cur] & c, prev = st[prev], found = null]
-                            else
-                                // ранн закончился на st[cur], текущий символ c — НЕ цифра
-                                // валидируем ранн только если:
-                                // - длина >=4
-                                // - prev перед ранном был пробел
-                                // - текущий символ (после ранна) = пробел
-                                if Text.Length(st[cur]) >= 4 and st[prev] = " " and c = " " then
-                                    [cur = "", prev = c, found = st[cur]]
-                                else
-                                    [cur = "", prev = c, found = null]
-            ),
-
-        result = scan[found]
-    in
-        result,
-
-    // Применяем к каждому сегменту и берём только непустые
-    perSeg = List.Transform(segs, each FirstArtikelInSeg(_)),
-    cleaned = List.RemoveNulls(perSeg),
-
-    // Склеиваем в список
-    res = Text.Combine(cleaned, ";")
-in
-    res
+' Небольшая помощь: попробуем найти лист, где есть tbl_Artikel
+Private Function loSheetNameGuess() As String
+    Dim ws As Worksheet
+    For Each ws In ActiveWorkbook.Worksheets
+        On Error Resume Next
+        If ws.ListObjects("tbl_Artikel").Name = "tbl_Artikel" Then
+            loSheetNameGuess = ws.Name
+            Exit Function
+        End If
+        On Error GoTo 0
+    Next ws
+    loSheetNameGuess = ActiveSheet.Name ' fallback
+End Function
