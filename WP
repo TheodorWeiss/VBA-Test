@@ -1,17 +1,155 @@
-Public Sub Debug_TableAndColumnNames()
-    ' Prints all table names and column names to the Immediate Window (Ctrl+G)
-    Dim ws As Worksheet
+Option Explicit
+
+Public Sub FilterPivot_Artikelnummer_FromTable()
+    ' OLAP-focused filter:
+    ' Filters the PivotTable based on tbl_Artikel[Artikelnummer] by applying VisibleItemsList
+    ' to the CubeField that contains "Artikelnummer".
+
+    Dim pt As PivotTable
+    Dim cf As CubeField
+    Dim pf As PivotField
+    Dim wsList As Worksheet
     Dim lo As ListObject
-    Dim lc As ListColumn
-    
-    For Each ws In ActiveWorkbook.Worksheets
-        For Each lo In ws.ListObjects
-            Debug.Print "Sheet=" & ws.Name & " | Table=" & "[" & lo.Name & "]"
-            For Each lc In lo.ListColumns
-                Debug.Print "   Column=" & "[" & lc.Name & "]"
-            Next lc
-        Next lo
-    Next ws
-    
-    MsgBox "Done. Open VBA Immediate Window (Ctrl+G) to see exact names in brackets.", vbInformation
+    Dim dict As Object
+    Dim r As Range
+
+    Dim pi As PivotItem
+    Dim arr() As Variant
+    Dim cnt As Long
+    Dim found As Boolean
+
+    On Error GoTo ErrHandler
+
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+
+    ' 1) Get PivotTable safely
+    Set pt = GetPivotTableSafe()
+    If pt Is Nothing Then
+        MsgBox "No PivotTable found. Click inside the PivotTable and run the macro again.", vbExclamation
+        GoTo Cleanup
+    End If
+
+    ' 2) Ensure this is an OLAP pivot
+    If Not pt.PivotCache.OLAP Then
+        MsgBox "This macro is intended for OLAP pivots (Power BI / Analysis Services). Your pivot is not OLAP.", vbExclamation
+        GoTo Cleanup
+    End If
+
+    ' 3) Load list values into dictionary
+    Set wsList = FindTableSheet("tbl_Artikel")
+    Set lo = wsList.ListObjects("tbl_Artikel")
+
+    Set dict = CreateObject("Scripting.Dictionary")
+    dict.CompareMode = 1 ' TextCompare
+
+    For Each r In lo.ListColumns("Artikelnummer").DataBodyRange.Cells
+        If Len(Trim(CStr(r.Value))) > 0 Then
+            dict(NormalizeKey(r.Value)) = True
+        End If
+    Next r
+
+    If dict.Count = 0 Then
+        MsgBox "Table 'tbl_Artikel[Artikelnummer]' contains no usable values.", vbExclamation
+        GoTo Cleanup
+    End If
+
+    ' 4) Find the CubeField that corresponds to Artikelnummer
+    found = False
+    For Each cf In pt.CubeFields
+        ' We search by name because captions can vary; OLAP names often contain the dimension/attribute name
+        If InStr(1, cf.Name, "Artikelnummer", vbTextCompare) > 0 Then
+            found = True
+            Exit For
+        End If
+    Next cf
+
+    If Not found Then
+        MsgBox "Could not find a CubeField containing 'Artikelnummer'.", vbExclamation
+        GoTo Cleanup
+    End If
+
+    ' 5) Get the PivotField generated for that CubeField
+    ' In OLAP pivots, a CubeField can expose one or more PivotFields; we use the first one.
+    If cf.PivotFields.Count = 0 Then
+        MsgBox "The CubeField was found, but it exposes no PivotFields.", vbExclamation
+        GoTo Cleanup
+    End If
+    Set pf = cf.PivotFields(1)
+
+    ' 6) Build VisibleItemsList using PivotItems that actually exist in the pivot field
+    cnt = 0
+    For Each pi In pf.PivotItems
+        If dict.Exists(NormalizeKey(pi.Caption)) Then
+            cnt = cnt + 1
+            ReDim Preserve arr(1 To cnt)
+            arr(cnt) = pi.Name ' OLAP unique name
+        End If
+    Next pi
+
+    If cnt = 0 Then
+        MsgBox "No matching items found in the pivot field. Check formatting (text vs number) and leading zeros.", vbExclamation
+        GoTo Cleanup
+    End If
+
+    ' 7) Apply filter
+    pt.ManualUpdate = True
+    pf.ClearAllFilters
+    pf.VisibleItemsList = arr
+    pt.ManualUpdate = False
+
+    pt.RefreshTable
+    MsgBox "Filter applied: " & cnt & " Artikelnummer.", vbInformation
+
+Cleanup:
+    Application.ScreenUpdating = True
+    Application.EnableEvents = True
+    Application.Calculation = xlCalculationAutomatic
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
+    Resume Cleanup
 End Sub
+
+Private Function NormalizeKey(ByVal v As Variant) As String
+    ' Normalizes keys to improve matching across text/number formats.
+    Dim s As String
+    s = Trim(CStr(v))
+    If Len(s) > 0 And IsNumeric(s) Then
+        On Error Resume Next
+        s = CStr(CLng(CDbl(s)))
+        On Error GoTo 0
+    End If
+    NormalizeKey = s
+End Function
+
+Private Function GetPivotTableSafe() As PivotTable
+    Dim pt As PivotTable
+    On Error Resume Next
+    Set pt = ActiveCell.PivotTable
+    On Error GoTo 0
+    If Not pt Is Nothing Then
+        Set GetPivotTableSafe = pt
+        Exit Function
+    End If
+    If ActiveSheet.PivotTables.Count > 0 Then
+        Set GetPivotTableSafe = ActiveSheet.PivotTables(1)
+        Exit Function
+    End If
+    Set GetPivotTableSafe = Nothing
+End Function
+
+Private Function FindTableSheet(ByVal tableName As String) As Worksheet
+    Dim ws As Worksheet
+    For Each ws In ActiveWorkbook.Worksheets
+        On Error Resume Next
+        If ws.ListObjects(tableName).Name = tableName Then
+            Set FindTableSheet = ws
+            Exit Function
+        End If
+        On Error GoTo 0
+    Next ws
+    Set FindTableSheet = Nothing
+End Function
