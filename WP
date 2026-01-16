@@ -1,180 +1,38 @@
-Option Explicit
-
-'========================
-' CONFIG (adjust only if names differ)
-'========================
-Private Const TABLE_NAME As String = "tbl_Artikel"
-Private Const TABLE_COL_ARTIKELNUMMER As String = "Artikelnummer"
-
-' From your screenshot: SlicerCache.Name = Datenschnitt_Artikelnummer
-Private Const SLICER_CACHE_NAME As String = "Datenschnitt_Artikelnummer"
-
-
-'========================
-' STEP 1: Diagnostics — show how OLAP slicer items are named internally
-'========================
 Public Sub Slicer_Debug_ShowItemNameExamples()
-    ' Prints first N slicer items to Immediate Window (Ctrl+G) so we can see the exact Name format.
     Dim sc As SlicerCache
-    Dim i As Long, n As Long
+    Dim si As SlicerItem
+    Dim n As Long, i As Long
     Dim msg As String
-    
+
     Set sc = ThisWorkbook.SlicerCaches(SLICER_CACHE_NAME)
-    
-    n = 15
-    If sc.SlicerItems.Count < n Then n = sc.SlicerItems.Count
-    
+
     Debug.Print "----- SLICER ITEM EXAMPLES -----"
     Debug.Print "SlicerCache.Name = " & sc.Name
     Debug.Print "SlicerCache.SourceName = " & sc.SourceName
-    
-    For i = 1 To n
-        Debug.Print i & ") Caption=[" & sc.SlicerItems(i).Caption & "]  Name=[" & sc.SlicerItems(i).Name & "]"
-    Next i
-    
-    msg = "Printed " & n & " slicer items to Immediate Window (Ctrl+G)." & vbCrLf & _
-          "Please copy 1-2 lines (Caption+Name) here."
+    Debug.Print "SlicerCache.OLAP = " & sc.OLAP
+
+    n = 15
+    i = 0
+
+    If sc.OLAP Then
+        ' OLAP slicer: items are under SlicerCacheLevels
+        Debug.Print "Using sc.SlicerCacheLevels(1).SlicerItems ..."
+        For Each si In sc.SlicerCacheLevels(1).SlicerItems
+            i = i + 1
+            Debug.Print i & ") Caption=[" & si.Caption & "]  Name=[" & si.Name & "]"
+            If i >= n Then Exit For
+        Next si
+    Else
+        ' Non-OLAP slicer
+        Debug.Print "Using sc.SlicerItems ..."
+        For Each si In sc.SlicerItems
+            i = i + 1
+            Debug.Print i & ") Caption=[" & si.Caption & "]  Name=[" & si.Name & "]"
+            If i >= n Then Exit For
+        Next si
+    End If
+
+    msg = "Printed " & i & " slicer items to Immediate Window (Ctrl+G)." & vbCrLf & _
+          "Open Ctrl+G and copy 2-3 lines (Caption+Name) here."
     MsgBox msg, vbInformation
 End Sub
-
-
-'========================
-' STEP 2: Apply slicer filter using values from tbl_Artikel[Artikelnummer]
-'========================
-Public Sub Slicer_ApplyArtikelnummerFromTable()
-    ' Reads Artikelnummer list from an Excel table and applies it to the OLAP slicer cache.
-    ' For OLAP slicers, VisibleSlicerItemsList expects internal item names (often MDX unique names).
-    
-    Dim sc As SlicerCache
-    Dim lo As ListObject
-    Dim rng As Range
-    Dim cell As Range
-    
-    Dim dict As Object
-    Dim v As String
-    
-    Dim arr() As String
-    Dim k As Variant
-    Dim idx As Long
-    
-    Dim calcMode As XlCalculation
-    
-    On Error GoTo ErrHandler
-    
-    ' Performance settings
-    Application.ScreenUpdating = False
-    Application.EnableEvents = False
-    calcMode = Application.Calculation
-    Application.Calculation = xlCalculationManual
-    
-    ' Get slicer cache
-    Set sc = ThisWorkbook.SlicerCaches(SLICER_CACHE_NAME)
-    
-    ' Find the table anywhere in this workbook
-    Set lo = FindTableByName(ThisWorkbook, TABLE_NAME)
-    If lo Is Nothing Then
-        Err.Raise vbObjectError + 100, , "Table not found: " & TABLE_NAME
-    End If
-    
-    ' Get the column range
-    If lo.ListColumns.Count = 0 Then
-        Err.Raise vbObjectError + 101, , "Table has no columns: " & TABLE_NAME
-    End If
-    
-    On Error Resume Next
-    Set rng = lo.ListColumns(TABLE_COL_ARTIKELNUMMER).DataBodyRange
-    On Error GoTo ErrHandler
-    
-    If rng Is Nothing Then
-        Err.Raise vbObjectError + 102, , "Column not found or empty (no data rows): " & TABLE_COL_ARTIKELNUMMER
-    End If
-    
-    ' Build unique set of values (as strings)
-    Set dict = CreateObject("Scripting.Dictionary")
-    dict.CompareMode = 1 ' TextCompare
-    
-    For Each cell In rng.Cells
-        v = Trim$(CStr(cell.Value2))
-        If Len(v) > 0 Then
-            If Not dict.Exists(v) Then dict.Add v, True
-        End If
-    Next cell
-    
-    If dict.Count = 0 Then
-        Err.Raise vbObjectError + 103, , "No values found in " & TABLE_NAME & "[" & TABLE_COL_ARTIKELNUMMER & "]"
-    End If
-    
-    ' IMPORTANT:
-    ' For OLAP slicers, we must pass slicer item NAMES (internal identifiers), not captions.
-    ' Therefore we build the list by matching captions -> names first (safe approach).
-    '
-    ' We create a map Caption->Name from slicer items (fast enough for typical sizes),
-    ' then translate your table values into internal names.
-    
-    Dim mapCapToName As Object
-    Dim si As SlicerItem
-    
-    Set mapCapToName = CreateObject("Scripting.Dictionary")
-    mapCapToName.CompareMode = 1 ' TextCompare
-    
-    For Each si In sc.SlicerItems
-        mapCapToName(Trim$(CStr(si.Caption))) = si.Name
-    Next si
-    
-    ' Translate table values to slicer item names
-    ReDim arr(1 To dict.Count)
-    idx = 0
-    
-    For Each k In dict.Keys
-        If mapCapToName.Exists(CStr(k)) Then
-            idx = idx + 1
-            arr(idx) = mapCapToName(CStr(k))
-        Else
-            ' If a value from the table does not exist in slicer items, we ignore it.
-            ' This often happens when the cube does not contain this Artikelnummer in the current context.
-        End If
-    Next k
-    
-    If idx = 0 Then
-        Err.Raise vbObjectError + 104, , "None of the table values match slicer items. Check Caption/format."
-    End If
-    
-    ' Shrink array to actual size
-    If idx < UBound(arr) Then
-        ReDim Preserve arr(1 To idx)
-    End If
-    
-    ' Apply selection
-    sc.ClearManualFilter
-    sc.VisibleSlicerItemsList = arr
-    
-    MsgBox "Slicer filter applied: " & idx & " items selected.", vbInformation
-    
-Cleanup:
-    Application.Calculation = calcMode
-    Application.EnableEvents = True
-    Application.ScreenUpdating = True
-    Exit Sub
-    
-ErrHandler:
-    MsgBox "Failed: " & Err.Description, vbExclamation
-    Resume Cleanup
-End Sub
-
-
-'========================
-' Helper: find table by name across all sheets
-'========================
-Private Function FindTableByName(ByVal wb As Workbook, ByVal tableName As String) As ListObject
-    Dim ws As Worksheet
-    Dim lo As ListObject
-    
-    For Each ws In wb.Worksheets
-        For Each lo In ws.ListObjects
-            If StrComp(lo.Name, tableName, vbTextCompare) = 0 Then
-                Set FindTableByName = lo
-                Exit Function
-            End If
-        Next lo
-    Next ws
-End Function
