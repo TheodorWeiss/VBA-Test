@@ -2,47 +2,51 @@ Option Explicit
 
 Private Const SLICER_CACHE_NAME As String = "Datenschnitt_Artikelnummer"
 
-Public Sub Slicer_PrintSelectedMDX_Safe()
+Public Sub Slicer_PrintVisibleList_VariantSafe()
     Dim sc As SlicerCache
-    Dim v As String
-    
-    On Error GoTo EH
+    Dim v As Variant
     
     Set sc = ThisWorkbook.SlicerCaches(SLICER_CACHE_NAME)
     
     Debug.Print "OLAP=" & sc.OLAP
     Debug.Print "SlicerCache.Name=" & sc.Name
     Debug.Print "SourceName=" & sc.SourceName
-    Debug.Print "VisibleSlicerItemsList:"
+    Debug.Print "VisibleSlicerItemsList (raw):"
     
-    ' Try 1: SlicerCache.VisibleSlicerItemsList
     On Error Resume Next
     v = sc.VisibleSlicerItemsList
     If Err.Number <> 0 Then
         Debug.Print "ERROR reading sc.VisibleSlicerItemsList: " & Err.Number & " - " & Err.Description
         Err.Clear
     Else
-        Debug.Print v
-        On Error GoTo 0
-        MsgBox "Done. Check Immediate Window (Ctrl+G).", vbInformation
-        Exit Sub
+        PrintVariant v
     End If
     On Error GoTo 0
     
-    ' Try 2: SlicerCacheLevels(1).VisibleSlicerItemsList (some versions expose it here)
+    Debug.Print "VisibleSlicerItemsList via Level(1) (raw):"
     On Error Resume Next
     v = sc.SlicerCacheLevels(1).VisibleSlicerItemsList
     If Err.Number <> 0 Then
-        Debug.Print "ERROR reading sc.SlicerCacheLevels(1).VisibleSlicerItemsList: " & Err.Number & " - " & Err.Description
+        Debug.Print "ERROR reading Level(1).VisibleSlicerItemsList: " & Err.Number & " - " & Err.Description
         Err.Clear
     Else
-        Debug.Print v
+        PrintVariant v
     End If
     On Error GoTo 0
     
     MsgBox "Done. Check Immediate Window (Ctrl+G).", vbInformation
-    Exit Sub
+End Sub
 
-EH:
-    MsgBox "Failed: " & Err.Number & " - " & Err.Description, vbExclamation
+Private Sub PrintVariant(ByVal v As Variant)
+    Dim i As Long
+    
+    If IsArray(v) Then
+        Debug.Print "Array bounds: LBound=" & LBound(v) & " UBound=" & UBound(v)
+        For i = LBound(v) To WorksheetFunction.Min(UBound(v), LBound(v) + 20)
+            Debug.Print "  [" & i & "] = " & CStr(v(i))
+        Next i
+        If UBound(v) > LBound(v) + 20 Then Debug.Print "  ... (truncated)"
+    Else
+        Debug.Print CStr(v)
+    End If
 End Sub
