@@ -1,52 +1,85 @@
 Option Explicit
 
+Private Const TABLE_NAME As String = "tbl_Artikel"
+Private Const TABLE_COL_ARTIKELNUMMER As String = "Artikelnummer"
 Private Const SLICER_CACHE_NAME As String = "Datenschnitt_Artikelnummer"
 
-Public Sub Slicer_PrintVisibleList_VariantSafe()
+Public Sub Slicer_ApplyFromTable_Artikelnummer()
+    ' Reads Artikelnummer list from Excel table and applies it to the OLAP slicer via VisibleSlicerItemsList.
+
     Dim sc As SlicerCache
-    Dim v As Variant
-    
+    Dim lo As ListObject
+    Dim rng As Range, cell As Range
+    Dim dict As Object
+    Dim arr() As Variant
+    Dim i As Long, key As Variant
+    Dim mdxPrefix As String
+
+    On Error GoTo ErrHandler
+
     Set sc = ThisWorkbook.SlicerCaches(SLICER_CACHE_NAME)
-    
-    Debug.Print "OLAP=" & sc.OLAP
-    Debug.Print "SlicerCache.Name=" & sc.Name
-    Debug.Print "SourceName=" & sc.SourceName
-    Debug.Print "VisibleSlicerItemsList (raw):"
-    
-    On Error Resume Next
-    v = sc.VisibleSlicerItemsList
-    If Err.Number <> 0 Then
-        Debug.Print "ERROR reading sc.VisibleSlicerItemsList: " & Err.Number & " - " & Err.Description
-        Err.Clear
-    Else
-        PrintVariant v
-    End If
-    On Error GoTo 0
-    
-    Debug.Print "VisibleSlicerItemsList via Level(1) (raw):"
-    On Error Resume Next
-    v = sc.SlicerCacheLevels(1).VisibleSlicerItemsList
-    If Err.Number <> 0 Then
-        Debug.Print "ERROR reading Level(1).VisibleSlicerItemsList: " & Err.Number & " - " & Err.Description
-        Err.Clear
-    Else
-        PrintVariant v
-    End If
-    On Error GoTo 0
-    
-    MsgBox "Done. Check Immediate Window (Ctrl+G).", vbInformation
+    If sc Is Nothing Then Err.Raise vbObjectError + 1, , "SlicerCache not found: " & SLICER_CACHE_NAME
+    If Not sc.OLAP Then Err.Raise vbObjectError + 2, , "SlicerCache is not OLAP."
+
+    Set lo = FindTableByName(ThisWorkbook, TABLE_NAME)
+    If lo Is Nothing Then Err.Raise vbObjectError + 3, , "Table not found: " & TABLE_NAME
+
+    Set rng = lo.ListColumns(TABLE_COL_ARTIKELNUMMER).DataBodyRange
+    If rng Is Nothing Then Err.Raise vbObjectError + 4, , "Column has no data: " & TABLE_COL_ARTIKELNUMMER
+
+    ' Build a unique list of numbers from the table
+    Set dict = CreateObject("Scripting.Dictionary")
+    dict.CompareMode = 1 ' vbTextCompare
+
+    For Each cell In rng.Cells
+        Dim s As String
+        s = Trim(CStr(cell.Value))
+        If Len(s) > 0 Then
+            ' Keep only numeric-looking values; adjust if your Artikelnummer may contain leading zeros as text.
+            If IsNumeric(s) Then
+                dict(CLng(s)) = True
+            End If
+        End If
+    Next cell
+
+    If dict.Count = 0 Then Err.Raise vbObjectError + 5, , "No Artikelnummer values found in the table."
+
+    ' MDX prefix for the OLAP member unique name
+    mdxPrefix = sc.SourceName & ".&["  ' e.g. [Artikel].[Artikelnummer].&[
+
+    ReDim arr(1 To dict.Count)
+    i = 0
+    For Each key In dict.Keys
+        i = i + 1
+        arr(i) = mdxPrefix & CStr(key) & "]"
+    Next key
+
+    Application.ScreenUpdating = False
+
+    ' Apply the filter to the slicer
+    sc.ClearManualFilter
+    sc.VisibleSlicerItemsList = arr
+
+    Application.ScreenUpdating = True
+
+    MsgBox "Applied " & dict.Count & " Artikelnummer values to slicer.", vbInformation
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "Failed: " & Err.Number & " - " & Err.Description, vbExclamation
 End Sub
 
-Private Sub PrintVariant(ByVal v As Variant)
-    Dim i As Long
-    
-    If IsArray(v) Then
-        Debug.Print "Array bounds: LBound=" & LBound(v) & " UBound=" & UBound(v)
-        For i = LBound(v) To WorksheetFunction.Min(UBound(v), LBound(v) + 20)
-            Debug.Print "  [" & i & "] = " & CStr(v(i))
-        Next i
-        If UBound(v) > LBound(v) + 20 Then Debug.Print "  ... (truncated)"
-    Else
-        Debug.Print CStr(v)
-    End If
-End Sub
+Private Function FindTableByName(ByVal wb As Workbook, ByVal tableName As String) As ListObject
+    Dim ws As Worksheet
+    Dim lo As ListObject
+
+    For Each ws In wb.Worksheets
+        For Each lo In ws.ListObjects
+            If StrComp(lo.Name, tableName, vbTextCompare) = 0 Then
+                Set FindTableByName = lo
+                Exit Function
+            End If
+        Next lo
+    Next ws
+End Function
