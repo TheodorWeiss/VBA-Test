@@ -1,39 +1,23 @@
-Option Explicit
+stepName = "Find ListObject tbl_Artikel (global search)"
+Set lo = FindListObject("tbl_Artikel")
+If lo Is Nothing Then
+    MsgBox "Step: " & stepName & vbCrLf & "ListObject 'tbl_Artikel' not found in this workbook.", vbExclamation
+    Exit Sub
+End If
 
-Private Function GetPivotTableSafe() As PivotTable
-    ' Returns the PivotTable from the active cell (preferred),
-    ' otherwise returns the first PivotTable on the active sheet.
-    Dim pt As PivotTable
-
-    On Error Resume Next
-    Set pt = ActiveCell.PivotTable
-    On Error GoTo 0
-
-    If Not pt Is Nothing Then
-        Set GetPivotTableSafe = pt
-        Exit Function
-    End If
-
-    If ActiveSheet.PivotTables.Count > 0 Then
-        Set GetPivotTableSafe = ActiveSheet.PivotTables(1)
-        Exit Function
-    End If
-
-    Set GetPivotTableSafe = Nothing
-End Function
-
-Private Function FindTableSheet(ByVal tableName As String) As Worksheet
-    ' Finds the worksheet that contains a ListObject with the given name.
+Private Function FindListObject(ByVal tableName As String) As ListObject
+    ' Searches the entire workbook for a ListObject with the given name.
     Dim ws As Worksheet
+    Dim lo As ListObject
 
     For Each ws In ActiveWorkbook.Worksheets
-        On Error Resume Next
-        If ws.ListObjects(tableName).Name = tableName Then
-            Set FindTableSheet = ws
-            Exit Function
-        End If
-        On Error GoTo 0
+        For Each lo In ws.ListObjects
+            If StrComp(lo.Name, tableName, vbTextCompare) = 0 Then
+                Set FindListObject = lo
+                Exit Function
+            End If
+        Next lo
     Next ws
 
-    Set FindTableSheet = Nothing
+    Set FindListObject = Nothing
 End Function
