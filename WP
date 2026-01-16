@@ -1,16 +1,107 @@
-stepName = "Find ListObject tbl_Artikel (global search)"
-Set lo = FindListObject("tbl_Artikel")
-If lo Is Nothing Then
-    MsgBox "Step: " & stepName & vbCrLf & "ListObject 'tbl_Artikel' not found in this workbook.", vbExclamation
+Option Explicit
+
+Public Sub FilterPivot_Artikelnummer_FromTable()
+    ' Filters an OLAP PivotTable field [Artikelnummer] using values from Excel table tbl_Artikel[Artikelnummer].
+
+    Dim pt As PivotTable
+    Dim cf As CubeField
+    Dim pf As PivotField
+    Dim lo As ListObject
+    Dim lc As ListColumn
+    Dim dict As Object
+    Dim r As Range
+
+    Dim arr() As Variant
+    Dim i As Long
+    Dim key As Variant
+
+    On Error GoTo ErrHandler
+
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+
+    ' 1) Get PivotTable
+    Set pt = GetPivotTableSafe()
+    If pt Is Nothing Then Err.Raise vbObjectError + 1, , "No PivotTable found. Click inside the PivotTable first."
+    If Not pt.PivotCache.OLAP Then Err.Raise vbObjectError + 2, , "PivotTable is not OLAP."
+
+    ' 2) Get input table and column
+    Set lo = FindListObject("tbl_Artikel")
+    If lo Is Nothing Then Err.Raise vbObjectError + 3, , "ListObject 'tbl_Artikel' not found."
+
+    Set lc = lo.ListColumns("Artikelnummer")
+    If lc Is Nothing Then Err.Raise vbObjectError + 4, , "Column 'Artikelnummer' not found in tbl_Artikel."
+    If lc.DataBodyRange Is Nothing Then Err.Raise vbObjectError + 5, , "tbl_Artikel[Artikelnummer] has no rows."
+
+    ' 3) Load values into dictionary
+    Set dict = CreateObject("Scripting.Dictionary")
+    dict.CompareMode = 1 ' TextCompare
+
+    For Each r In lc.DataBodyRange.Cells
+        If Len(Trim$(CStr(r.Value))) > 0 Then dict(Trim$(CStr(r.Value))) = True
+    Next r
+
+    If dict.Count = 0 Then Err.Raise vbObjectError + 6, , "No values in tbl_Artikel[Artikelnummer]."
+
+    ' 4) Find CubeField
+    For Each cf In pt.CubeFields
+        If InStr(1, cf.Name, "Artikelnummer", vbTextCompare) > 0 Then Exit For
+    Next cf
+    If cf Is Nothing Then Err.Raise vbObjectError + 7, , "CubeField containing 'Artikelnummer' not found."
+    If cf.PivotFields.Count = 0 Then Err.Raise vbObjectError + 8, , "CubeField has no PivotFields."
+
+    Set pf = cf.PivotFields(1)
+
+    ' 5) Build VisibleItemsList
+    ReDim arr(1 To dict.Count)
+    i = 1
+    For Each key In dict.Keys
+        arr(i) = CStr(key)
+        i = i + 1
+    Next key
+
+    ' 6) Apply filter
+    On Error Resume Next
+    pf.ClearAllFilters
+    On Error GoTo ErrHandler
+
+    pf.VisibleItemsList = arr
+    pt.RefreshTable
+
+    MsgBox "Filter applied. Selected items: " & dict.Count, vbInformation
+
+Cleanup:
+    Application.ScreenUpdating = True
+    Application.EnableEvents = True
+    Application.Calculation = xlCalculationAutomatic
     Exit Sub
-End If
+
+ErrHandler:
+    MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
+    Resume Cleanup
+End Sub
+
+
+Private Function GetPivotTableSafe() As PivotTable
+    Dim pt As PivotTable
+    On Error Resume Next
+    Set pt = ActiveCell.PivotTable
+    On Error GoTo 0
+
+    If Not pt Is Nothing Then
+        Set GetPivotTableSafe = pt
+    ElseIf ActiveSheet.PivotTables.Count > 0 Then
+        Set GetPivotTableSafe = ActiveSheet.PivotTables(1)
+    Else
+        Set GetPivotTableSafe = Nothing
+    End If
+End Function
+
 
 Private Function FindListObject(ByVal tableName As String) As ListObject
-    ' Searches the entire workbook for a ListObject with the given name.
-    Dim ws As Worksheet
-    Dim lo As ListObject
-
-    For Each ws In ActiveWorkbook.Worksheets
+    Dim ws As Worksheet, lo As ListObject
+    For Each ws In ThisWorkbook.Worksheets
         For Each lo In ws.ListObjects
             If StrComp(lo.Name, tableName, vbTextCompare) = 0 Then
                 Set FindListObject = lo
@@ -18,6 +109,5 @@ Private Function FindListObject(ByVal tableName As String) As ListObject
             End If
         Next lo
     Next ws
-
     Set FindListObject = Nothing
 End Function
