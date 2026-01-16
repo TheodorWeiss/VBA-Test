@@ -1,38 +1,16 @@
-Public Sub Slicer_Debug_ShowItemNameExamples()
-    Dim sc As SlicerCache
-    Dim si As SlicerItem
-    Dim n As Long, i As Long
-    Dim msg As String
+Option Explicit
 
+Private Const SLICER_CACHE_NAME As String = "Datenschnitt_Artikelnummer"
+
+Public Sub Slicer_PrintSelectedMDX()
+    Dim sc As SlicerCache
     Set sc = ThisWorkbook.SlicerCaches(SLICER_CACHE_NAME)
 
-    Debug.Print "----- SLICER ITEM EXAMPLES -----"
-    Debug.Print "SlicerCache.Name = " & sc.Name
-    Debug.Print "SlicerCache.SourceName = " & sc.SourceName
-    Debug.Print "SlicerCache.OLAP = " & sc.OLAP
+    Debug.Print "OLAP=" & sc.OLAP
+    Debug.Print "SlicerCache.Name=" & sc.Name
+    Debug.Print "SourceName=" & sc.SourceName
+    Debug.Print "VisibleSlicerItemsList:"
+    Debug.Print sc.VisibleSlicerItemsList
 
-    n = 15
-    i = 0
-
-    If sc.OLAP Then
-        ' OLAP slicer: items are under SlicerCacheLevels
-        Debug.Print "Using sc.SlicerCacheLevels(1).SlicerItems ..."
-        For Each si In sc.SlicerCacheLevels(1).SlicerItems
-            i = i + 1
-            Debug.Print i & ") Caption=[" & si.Caption & "]  Name=[" & si.Name & "]"
-            If i >= n Then Exit For
-        Next si
-    Else
-        ' Non-OLAP slicer
-        Debug.Print "Using sc.SlicerItems ..."
-        For Each si In sc.SlicerItems
-            i = i + 1
-            Debug.Print i & ") Caption=[" & si.Caption & "]  Name=[" & si.Name & "]"
-            If i >= n Then Exit For
-        Next si
-    End If
-
-    msg = "Printed " & i & " slicer items to Immediate Window (Ctrl+G)." & vbCrLf & _
-          "Open Ctrl+G and copy 2-3 lines (Caption+Name) here."
-    MsgBox msg, vbInformation
+    MsgBox "Готово. Я вывела VisibleSlicerItemsList в Direktfenster (Ctrl+G).", vbInformation
 End Sub
