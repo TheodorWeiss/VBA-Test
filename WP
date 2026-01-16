@@ -1,89 +1,39 @@
 Option Explicit
 
-Public Sub FilterPivot_Artikelnummer_FromTable()
-    ' Diagnostic version: shows the exact step where it fails (no VBA Debug button needed).
-
-    Dim stepName As String
+Private Function GetPivotTableSafe() As PivotTable
+    ' Returns the PivotTable from the active cell (preferred),
+    ' otherwise returns the first PivotTable on the active sheet.
     Dim pt As PivotTable
-    Dim cf As CubeField
-    Dim pf As PivotField
-    Dim wsList As Worksheet
-    Dim lo As ListObject
-    Dim dict As Object
-    Dim r As Range
-    Dim found As Boolean
 
-    On Error GoTo ErrHandler
+    On Error Resume Next
+    Set pt = ActiveCell.PivotTable
+    On Error GoTo 0
 
-    stepName = "Init: get PivotTable"
-    Set pt = GetPivotTableSafe()
-    If pt Is Nothing Then
-        MsgBox "Step: " & stepName & vbCrLf & "No PivotTable found.", vbExclamation
-        Exit Sub
+    If Not pt Is Nothing Then
+        Set GetPivotTableSafe = pt
+        Exit Function
     End If
 
-    stepName = "Check OLAP"
-    If Not pt.PivotCache.OLAP Then
-        MsgBox "Step: " & stepName & vbCrLf & "Pivot is NOT OLAP.", vbExclamation
-        Exit Sub
+    If ActiveSheet.PivotTables.Count > 0 Then
+        Set GetPivotTableSafe = ActiveSheet.PivotTables(1)
+        Exit Function
     End If
 
-    stepName = "Find tbl_Artikel sheet"
-    Set wsList = FindTableSheet("tbl_Artikel")
-    If wsList Is Nothing Then
-        MsgBox "Step: " & stepName & vbCrLf & "Table 'tbl_Artikel' not found.", vbExclamation
-        Exit Sub
-    End If
+    Set GetPivotTableSafe = Nothing
+End Function
 
-    stepName = "Get ListObject tbl_Artikel"
-    Set lo = wsList.ListObjects("tbl_Artikel")
+Private Function FindTableSheet(ByVal tableName As String) As Worksheet
+    ' Finds the worksheet that contains a ListObject with the given name.
+    Dim ws As Worksheet
 
-    stepName = "Get ListColumn Artikelnummer"
-    ' Error 9 can happen here if the column name does not match exactly
-    Dim lc As ListColumn
-    Set lc = lo.ListColumns("Artikelnummer")
-
-    stepName = "Load dictionary from tbl_Artikel[Artikelnummer]"
-    Set dict = CreateObject("Scripting.Dictionary")
-    dict.CompareMode = 1 ' TextCompare
-    For Each r In lc.DataBodyRange.Cells
-        If Len(Trim(CStr(r.Value))) > 0 Then dict(Trim(CStr(r.Value))) = True
-    Next r
-    If dict.Count = 0 Then
-        MsgBox "Step: " & stepName & vbCrLf & "No values in tbl_Artikel[Artikelnummer].", vbExclamation
-        Exit Sub
-    End If
-
-    stepName = "Find CubeField containing 'Artikelnummer'"
-    found = False
-    For Each cf In pt.CubeFields
-        If InStr(1, cf.Name, "Artikelnummer", vbTextCompare) > 0 Then
-            found = True
-            Exit For
+    For Each ws In ActiveWorkbook.Worksheets
+        On Error Resume Next
+        If ws.ListObjects(tableName).Name = tableName Then
+            Set FindTableSheet = ws
+            Exit Function
         End If
-    Next cf
-    If Not found Then
-        MsgBox "Step: " & stepName & vbCrLf & "No CubeField name contains 'Artikelnummer'.", vbExclamation
-        Exit Sub
-    End If
+        On Error GoTo 0
+    Next ws
 
-    stepName = "Check CubeField.PivotFields.Count"
-    ' Error 9 often happens when you access index (1) but Count = 0
-    If cf.PivotFields.Count = 0 Then
-        MsgBox "Step: " & stepName & vbCrLf & "CubeField found, but PivotFields.Count = 0." & vbCrLf & _
-               "CubeField name: " & cf.Name, vbExclamation
-        Exit Sub
-    End If
-
-    stepName = "Get PivotField = cf.PivotFields(1)"
-    Set pf = cf.PivotFields(1)
-
-    MsgBox "Diagnostics OK up to: " & stepName & vbCrLf & _
-           "CubeField: " & cf.Name & vbCrLf & _
-           "PivotField: " & pf.Name, vbInformation
-    Exit Sub
-
-ErrHandler:
-    MsgBox "Failed at step: " & stepName & vbCrLf & _
-           "Error " & Err.Number & ": " & Err.Description, vbExclamation
-End Sub
+    Set FindTableSheet = Nothing
+End Function
