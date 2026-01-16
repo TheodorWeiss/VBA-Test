@@ -2,15 +2,47 @@ Option Explicit
 
 Private Const SLICER_CACHE_NAME As String = "Datenschnitt_Artikelnummer"
 
-Public Sub Slicer_PrintSelectedMDX()
+Public Sub Slicer_PrintSelectedMDX_Safe()
     Dim sc As SlicerCache
+    Dim v As String
+    
+    On Error GoTo EH
+    
     Set sc = ThisWorkbook.SlicerCaches(SLICER_CACHE_NAME)
-
+    
     Debug.Print "OLAP=" & sc.OLAP
     Debug.Print "SlicerCache.Name=" & sc.Name
     Debug.Print "SourceName=" & sc.SourceName
     Debug.Print "VisibleSlicerItemsList:"
-    Debug.Print sc.VisibleSlicerItemsList
+    
+    ' Try 1: SlicerCache.VisibleSlicerItemsList
+    On Error Resume Next
+    v = sc.VisibleSlicerItemsList
+    If Err.Number <> 0 Then
+        Debug.Print "ERROR reading sc.VisibleSlicerItemsList: " & Err.Number & " - " & Err.Description
+        Err.Clear
+    Else
+        Debug.Print v
+        On Error GoTo 0
+        MsgBox "Done. Check Immediate Window (Ctrl+G).", vbInformation
+        Exit Sub
+    End If
+    On Error GoTo 0
+    
+    ' Try 2: SlicerCacheLevels(1).VisibleSlicerItemsList (some versions expose it here)
+    On Error Resume Next
+    v = sc.SlicerCacheLevels(1).VisibleSlicerItemsList
+    If Err.Number <> 0 Then
+        Debug.Print "ERROR reading sc.SlicerCacheLevels(1).VisibleSlicerItemsList: " & Err.Number & " - " & Err.Description
+        Err.Clear
+    Else
+        Debug.Print v
+    End If
+    On Error GoTo 0
+    
+    MsgBox "Done. Check Immediate Window (Ctrl+G).", vbInformation
+    Exit Sub
 
-    MsgBox "Готово. Я вывела VisibleSlicerItemsList в Direktfenster (Ctrl+G).", vbInformation
+EH:
+    MsgBox "Failed: " & Err.Number & " - " & Err.Description, vbExclamation
 End Sub
