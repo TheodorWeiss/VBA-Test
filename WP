@@ -1,60 +1,39 @@
 let
-    // 0) Quelle: Tabelle Werbung_raw aus Excel
+    // 1) Quelle: Werbung_raw
     Quelle = Excel.CurrentWorkbook(){[Name="Werbung_raw"]}[Content],
 
-    // 1) Typen (по необходимости можешь расширить список колонок)
-    #"Geänderter Typ" =
-        Table.TransformColumnTypes(
-            Quelle,
-            {
-                {"Thema", type text},
-                {"Produktname", type text},
-                {"Region", type text},
-                {"Preis", type any}
-            }
+    // 2) Produktname нормализуем (как у тебя уже было)
+    #"Geaenderter Typ" = Table.TransformColumnTypes(Quelle, {{"Produktname", type text}}, "de-DE"),
+    #"Produktname getrimmt" = Table.TransformColumns(#"Geaenderter Typ", {{"Produktname", Text.Trim, type text}}),
+    #"Produktname bereinigt" = Table.TransformColumns(#"Produktname getrimmt", {{"Produktname", Text.Clean, type text}}),
+
+    // 3) "Лёгкий" матч: берем только нужные колонки и БУФЕРИЗУЕМ
+    MatchCols =
+        Table.SelectColumns(
+            q_Match_light,
+            {"Name", "Produktname", "Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte"}
         ),
+    MatchBuffered = Table.Buffer(MatchCols),
 
-    // 2) Produktname säubern (Trim + Clean)
-    #"Produktname getrimmt" =
-        Table.TransformColumns(
-            #"Geänderter Typ",
-            {{"Produktname", each Text.Trim(_), type text}}
-        ),
-
-    #"Produktname bereinigt" =
-        Table.TransformColumns(
-            #"Produktname getrimmt",
-            {{"Produktname", each Text.Clean(_), type text}}
-        ),
-
-    // 3) q_Match_light einmal puffern (damit PQ nicht dauernd neu durchrechnet)
-    MatchBuf = Table.Buffer(q_Match_light),
-
-    // 4) Merge: Werbung_raw[Produktname] -> q_Match_light[Name]
-    #"Zusammengeführte Abfragen" =
+    // 4) Merge по точному совпадению Produktname -> Name
+    #"Zusammengefuehrte Abfragen" =
         Table.NestedJoin(
             #"Produktname bereinigt",
             {"Produktname"},
-            MatchBuf,
+            MatchBuffered,
             {"Name"},
             "Match",
             JoinKind.LeftOuter
         ),
 
-    // 5) Match expandieren: нужные поля из q_Match_light
+    // 5) Expand нужных полей из матч-таблицы
     #"Erweiterte Match" =
         Table.ExpandTableColumn(
-            #"Zusammengeführte Abfragen",
+            #"Zusammengefuehrte Abfragen",
             "Match",
             {"Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte"},
             {"Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte"}
-        ),
-
-    // 6) Финальный набор колонок (ровно как ты описал)
-    #"Spalten ausgewählt" =
-        Table.SelectColumns(
-            #"Erweiterte Match",
-            {"Thema", "Produktname", "Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte", "Region", "Preis"}
         )
+
 in
-    #"Spalten ausgewählt"
+    #"Erweiterte Match"
