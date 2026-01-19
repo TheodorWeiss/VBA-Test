@@ -1,76 +1,60 @@
-Option Explicit
+let
+    // 0) Quelle: Tabelle Werbung_raw aus Excel
+    Quelle = Excel.CurrentWorkbook(){[Name="Werbung_raw"]}[Content],
 
-' mode:
-' "A"      = |A ∩ B| / |A|
-' "B"      = |A ∩ B| / |B|
-' "JACCARD"= |A ∩ B| / |A ∪ B|
-Public Function MatchPct(ByVal listA As String, ByVal listB As String, Optional ByVal mode As String = "JACCARD") As Variant
-    Dim dictA As Object, dictB As Object, dictU As Object
-    Dim arrA As Variant, arrB As Variant
-    Dim i As Long, key As String
-    Dim interCount As Long, unionCount As Long
-    Dim denom As Long
+    // 1) Typen (по необходимости можешь расширить список колонок)
+    #"Geänderter Typ" =
+        Table.TransformColumnTypes(
+            Quelle,
+            {
+                {"Thema", type text},
+                {"Produktname", type text},
+                {"Region", type text},
+                {"Preis", type any}
+            }
+        ),
 
-    Set dictA = CreateObject("Scripting.Dictionary")
-    Set dictB = CreateObject("Scripting.Dictionary")
-    Set dictU = CreateObject("Scripting.Dictionary")
+    // 2) Produktname säubern (Trim + Clean)
+    #"Produktname getrimmt" =
+        Table.TransformColumns(
+            #"Geänderter Typ",
+            {{"Produktname", each Text.Trim(_), type text}}
+        ),
 
-    mode = UCase$(Trim$(mode))
+    #"Produktname bereinigt" =
+        Table.TransformColumns(
+            #"Produktname getrimmt",
+            {{"Produktname", each Text.Clean(_), type text}}
+        ),
 
-    arrA = Split(listA, ";")
-    For i = LBound(arrA) To UBound(arrA)
-        key = Trim$(arrA(i))
-        If Len(key) > 0 Then
-            If Not dictA.Exists(key) Then dictA.Add key, 1
-        End If
-    Next i
+    // 3) q_Match_light einmal puffern (damit PQ nicht dauernd neu durchrechnet)
+    MatchBuf = Table.Buffer(q_Match_light),
 
-    arrB = Split(listB, ";")
-    For i = LBound(arrB) To UBound(arrB)
-        key = Trim$(arrB(i))
-        If Len(key) > 0 Then
-            If Not dictB.Exists(key) Then dictB.Add key, 1
-        End If
-    Next i
+    // 4) Merge: Werbung_raw[Produktname] -> q_Match_light[Name]
+    #"Zusammengeführte Abfragen" =
+        Table.NestedJoin(
+            #"Produktname bereinigt",
+            {"Produktname"},
+            MatchBuf,
+            {"Name"},
+            "Match",
+            JoinKind.LeftOuter
+        ),
 
-    ' intersection
-    interCount = 0
-    For Each key In dictA.Keys
-        If dictB.Exists(key) Then interCount = interCount + 1
-    Next key
+    // 5) Match expandieren: нужные поля из q_Match_light
+    #"Erweiterte Match" =
+        Table.ExpandTableColumn(
+            #"Zusammengeführte Abfragen",
+            "Match",
+            {"Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte"},
+            {"Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte"}
+        ),
 
-    If mode = "A" Then
-        denom = dictA.Count
-        If denom = 0 Then
-            MatchPct = CVErr(xlErrDiv0)
-        Else
-            MatchPct = interCount / denom
-        End If
-        Exit Function
-    End If
-
-    If mode = "B" Then
-        denom = dictB.Count
-        If denom = 0 Then
-            MatchPct = CVErr(xlErrDiv0)
-        Else
-            MatchPct = interCount / denom
-        End If
-        Exit Function
-    End If
-
-    ' union for Jaccard
-    For Each key In dictA.Keys
-        If Not dictU.Exists(key) Then dictU.Add key, 1
-    Next key
-    For Each key In dictB.Keys
-        If Not dictU.Exists(key) Then dictU.Add key, 1
-    Next key
-
-    unionCount = dictU.Count
-    If unionCount = 0 Then
-        MatchPct = CVErr(xlErrDiv0)
-    Else
-        MatchPct = interCount / unionCount
-    End If
-End Function
+    // 6) Финальный набор колонок (ровно как ты описал)
+    #"Spalten ausgewählt" =
+        Table.SelectColumns(
+            #"Erweiterte Match",
+            {"Thema", "Produktname", "Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte", "Region", "Preis"}
+        )
+in
+    #"Spalten ausgewählt"
