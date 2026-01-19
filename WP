@@ -1,1 +1,76 @@
+Option Explicit
 
+' mode:
+' "A"      = |A ∩ B| / |A|
+' "B"      = |A ∩ B| / |B|
+' "JACCARD"= |A ∩ B| / |A ∪ B|
+Public Function MatchPct(ByVal listA As String, ByVal listB As String, Optional ByVal mode As String = "JACCARD") As Variant
+    Dim dictA As Object, dictB As Object, dictU As Object
+    Dim arrA As Variant, arrB As Variant
+    Dim i As Long, key As String
+    Dim interCount As Long, unionCount As Long
+    Dim denom As Long
+
+    Set dictA = CreateObject("Scripting.Dictionary")
+    Set dictB = CreateObject("Scripting.Dictionary")
+    Set dictU = CreateObject("Scripting.Dictionary")
+
+    mode = UCase$(Trim$(mode))
+
+    arrA = Split(listA, ";")
+    For i = LBound(arrA) To UBound(arrA)
+        key = Trim$(arrA(i))
+        If Len(key) > 0 Then
+            If Not dictA.Exists(key) Then dictA.Add key, 1
+        End If
+    Next i
+
+    arrB = Split(listB, ";")
+    For i = LBound(arrB) To UBound(arrB)
+        key = Trim$(arrB(i))
+        If Len(key) > 0 Then
+            If Not dictB.Exists(key) Then dictB.Add key, 1
+        End If
+    Next i
+
+    ' intersection
+    interCount = 0
+    For Each key In dictA.Keys
+        If dictB.Exists(key) Then interCount = interCount + 1
+    Next key
+
+    If mode = "A" Then
+        denom = dictA.Count
+        If denom = 0 Then
+            MatchPct = CVErr(xlErrDiv0)
+        Else
+            MatchPct = interCount / denom
+        End If
+        Exit Function
+    End If
+
+    If mode = "B" Then
+        denom = dictB.Count
+        If denom = 0 Then
+            MatchPct = CVErr(xlErrDiv0)
+        Else
+            MatchPct = interCount / denom
+        End If
+        Exit Function
+    End If
+
+    ' union for Jaccard
+    For Each key In dictA.Keys
+        If Not dictU.Exists(key) Then dictU.Add key, 1
+    Next key
+    For Each key In dictB.Keys
+        If Not dictU.Exists(key) Then dictU.Add key, 1
+    Next key
+
+    unionCount = dictU.Count
+    If unionCount = 0 Then
+        MatchPct = CVErr(xlErrDiv0)
+    Else
+        MatchPct = interCount / unionCount
+    End If
+End Function
