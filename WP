@@ -1,9 +1,62 @@
 let
-    Keep =
+    // 1) Quelle: Werbung_raw
+    Quelle = Excel.CurrentWorkbook(){[Name="Werbung_raw"]}[Content],
+
+    // 2) Типы (опционально, но полезно)
+    #"Typen gesetzt" =
+        Table.TransformColumnTypes(
+            Quelle,
+            {{"Thema", type text}, {"Region", type text}, {"Produktname", type text}, {"Preis", type number}},
+            "de-DE"
+        ),
+
+    // 3) Produktname нормализуем (слева)
+    #"Produktname_trim" =
+        Table.TransformColumns(#"Typen gesetzt", {{"Produktname", each Text.Trim(_), type text}}),
+
+    #"Produktname_clean" =
+        Table.TransformColumns(#"Produktname_trim", {{"Produktname", each Text.Clean(_), type text}}),
+
+    // 4) Match-таблица: берём stage, оставляем нужные колонки, чистим Name, буферизуем
+    MatchBase =
         Table.SelectColumns(
-            q_Match_Wechsler_Drotax,
+            stage,   // <-- ВАЖНО: тут имя твоего stage-запроса
             {"Name", "Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte"}
         ),
-    Buffered = Table.Buffer(Keep)
+
+    MatchNameTrim =
+        Table.TransformColumns(MatchBase, {{"Name", each Text.Trim(_), type text}}),
+
+    MatchNameClean =
+        Table.TransformColumns(MatchNameTrim, {{"Name", each Text.Clean(_), type text}}),
+
+    MatchBuffered = Table.Buffer(MatchNameClean),
+
+    // 5) Merge: Werbung[Produktname] -> stage[Name]
+    #"Merge" =
+        Table.NestedJoin(
+            #"Produktname_clean",
+            {"Produktname"},
+            MatchBuffered,
+            {"Name"},
+            "Match",
+            JoinKind.LeftOuter
+        ),
+
+    // 6) Expand нужных колонок из stage
+    #"Expand Match" =
+        Table.ExpandTableColumn(
+            #"Merge",
+            "Match",
+            {"Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte"},
+            {"Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte"}
+        ),
+
+    // 7) Порядок колонок (опционально)
+    #"Spalten angeordnet" =
+        Table.ReorderColumns(
+            #"Expand Match",
+            {"Thema", "Region", "Preis", "Produktname", "Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte"}
+        )
 in
-    Buffered
+    #"Spalten angeordnet"
