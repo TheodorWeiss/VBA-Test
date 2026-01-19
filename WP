@@ -1,39 +1,9 @@
 let
-    // 1) Quelle: Werbung_raw
-    Quelle = Excel.CurrentWorkbook(){[Name="Werbung_raw"]}[Content],
-
-    // 2) Produktname нормализуем (как у тебя уже было)
-    #"Geaenderter Typ" = Table.TransformColumnTypes(Quelle, {{"Produktname", type text}}, "de-DE"),
-    #"Produktname getrimmt" = Table.TransformColumns(#"Geaenderter Typ", {{"Produktname", Text.Trim, type text}}),
-    #"Produktname bereinigt" = Table.TransformColumns(#"Produktname getrimmt", {{"Produktname", Text.Clean, type text}}),
-
-    // 3) "Лёгкий" матч: берем только нужные колонки и БУФЕРИЗУЕМ
-    MatchCols =
+    Keep =
         Table.SelectColumns(
-            q_Match_light,
-            {"Name", "Produktname", "Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte"}
+            q_Match_Wechsler_Drotax,
+            {"Name", "Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte"}
         ),
-    MatchBuffered = Table.Buffer(MatchCols),
-
-    // 4) Merge по точному совпадению Produktname -> Name
-    #"Zusammengefuehrte Abfragen" =
-        Table.NestedJoin(
-            #"Produktname bereinigt",
-            {"Produktname"},
-            MatchBuffered,
-            {"Name"},
-            "Match",
-            JoinKind.LeftOuter
-        ),
-
-    // 5) Expand нужных полей из матч-таблицы
-    #"Erweiterte Match" =
-        Table.ExpandTableColumn(
-            #"Zusammengefuehrte Abfragen",
-            "Match",
-            {"Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte"},
-            {"Aktionspreis min", "Anbieter", "Kalenderwoche", "% Märkte"}
-        )
-
+    Buffered = Table.Buffer(Keep)
 in
-    #"Erweiterte Match"
+    Buffered
