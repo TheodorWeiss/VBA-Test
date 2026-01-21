@@ -1,4 +1,39 @@
-#"RemoveExisting_ArtikelNr_Liste" =
-    if List.Contains(Table.ColumnNames(#"Geänderter Typ"), "ArtikelNr_Liste")
-    then Table.RemoveColumns(#"Geänderter Typ", {"ArtikelNr_Liste"})
-    else #"Geänderter Typ",
+let
+    Quelle = Excel.CurrentWorkbook(){[Name="TargetArt"]}[Content],
+    #"Geänderter Typ" = Table.TransformColumnTypes(Quelle,{
+        {"KW", type text},
+        {"Hauptwaren#(lf)gruppenkennung", Int64.Type},
+        {"Unterwarengruppe", type text},
+        {"Artikel Bez", type text},
+        {"Anzahl#(lf)Artikel", Int64.Type},
+        {"Aktionsthema", type text},
+        {"Seite", Int64.Type},
+        {"#WR", Int64.Type},
+        {"Umsatz, Mio € Aktion", type number},
+        {"Bon Aktion", type any},
+        {"Artikel Menge Aktion", type number},
+        {"Normal Menge Aktion", type number},
+        {"Umsatz, Mio € Aktion mehr", type number},
+        {"Rest-bon Aktion mehr", type any},
+        {"Menge Aktion mehr", type number},
+        {"Hauptwarengruppe", type text}
+    }),
+
+    // WICHTIG: Schritt korrekt als if-then-else schreiben
+    #"RemoveExisting_ArtikelNr_Liste" =
+        if List.Contains(Table.ColumnNames(#"Geänderter Typ"), "ArtikelNr_Liste")
+        then Table.RemoveColumns(#"Geänderter Typ", {"ArtikelNr_Liste"})
+        else #"Geänderter Typ",
+
+    #"Aufgerufene benutzerdefinierte Funktion" =
+        Table.AddColumn(#"RemoveExisting_ArtikelNr_Liste", "ArtikelNr_Liste", each fxExtractNums4Space([Artikel Bez])),
+
+    #"Neu angeordnete Spalten" =
+        Table.ReorderColumns(#"Aufgerufene benutzerdefinierte Funktion",{
+            "KW","Hauptwaren#(lf)gruppenkennung","Unterwarengruppe","Artikel Bez",
+            "ArtikelNr_Liste","Anzahl#(lf)Artikel","Aktionsthema","Seite","#WR",
+            "Umsatz, Mio € Aktion","Bon Aktion","Artikel Menge Aktion","Normal Menge Aktion",
+            "Umsatz, Mio € Aktion mehr","Rest-bon Aktion mehr","Menge Aktion mehr","Hauptwarengruppe"
+        })
+in
+    #"Neu angeordnete Spalten"
