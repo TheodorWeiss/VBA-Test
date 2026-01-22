@@ -8,20 +8,17 @@ let
     t2 = Table.AddColumn(
         t1,
         "Anbieter_IsBlank",
-        each if [Anbieter] = null or Text.Trim([Anbieter]) = "" then 1 else 0,
+        each if [Anbieter] = null or Text.Trim(Text.From([Anbieter])) = "" then 1 else 0,
         Int64.Type
     ),
 
-    // 3) Сортировка:
-    //    - сначала по флагу (0 наверху, 1 внизу)
-    //    - потом Anbieter по убыванию
-    //    - потом ID по возрастанию
+    // 3) Сортировка: ID ↑, внутри ID пустые Anbieter в конец, затем Anbieter ↓
     t3 = Table.Sort(
         t2,
         {
+            {"ID", Order.Ascending},
             {"Anbieter_IsBlank", Order.Ascending},
-            {"Anbieter", Order.Descending},
-            {"ID", Order.Ascending}
+            {"Anbieter", Order.Descending}
         }
     ),
 
