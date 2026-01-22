@@ -1,39 +1,31 @@
 let
-    Quelle = Excel.CurrentWorkbook(){[Name="TargetArt"]}[Content],
-    #"Geänderter Typ" = Table.TransformColumnTypes(Quelle,{
-        {"KW", type text},
-        {"Hauptwaren#(lf)gruppenkennung", Int64.Type},
-        {"Unterwarengruppe", type text},
-        {"Artikel Bez", type text},
-        {"Anzahl#(lf)Artikel", Int64.Type},
-        {"Aktionsthema", type text},
-        {"Seite", Int64.Type},
-        {"#WR", Int64.Type},
-        {"Umsatz, Mio € Aktion", type number},
-        {"Bon Aktion", type any},
-        {"Artikel Menge Aktion", type number},
-        {"Normal Menge Aktion", type number},
-        {"Umsatz, Mio € Aktion mehr", type number},
-        {"Rest-bon Aktion mehr", type any},
-        {"Menge Aktion mehr", type number},
-        {"Hauptwarengruppe", type text}
-    }),
+    t0 = #"Предыдущий шаг",
 
-    // WICHTIG: Schritt korrekt als if-then-else schreiben
-    #"RemoveExisting_ArtikelNr_Liste" =
-        if List.Contains(Table.ColumnNames(#"Geänderter Typ"), "ArtikelNr_Liste")
-        then Table.RemoveColumns(#"Geänderter Typ", {"ArtikelNr_Liste"})
-        else #"Geänderter Typ",
+    // 1) Тип для ID (чтобы сортировка была числовая)
+    t1 = Table.TransformColumnTypes(t0, {{"ID", Int64.Type}}),
 
-    #"Aufgerufene benutzerdefinierte Funktion" =
-        Table.AddColumn(#"RemoveExisting_ArtikelNr_Liste", "ArtikelNr_Liste", each fxExtractNums4Space([Artikel Bez])),
+    // 2) Флаг пустого Anbieter: пусто/null -> 1 (в конец), иначе 0
+    t2 = Table.AddColumn(
+        t1,
+        "Anbieter_IsBlank",
+        each if [Anbieter] = null or Text.Trim([Anbieter]) = "" then 1 else 0,
+        Int64.Type
+    ),
 
-    #"Neu angeordnete Spalten" =
-        Table.ReorderColumns(#"Aufgerufene benutzerdefinierte Funktion",{
-            "KW","Hauptwaren#(lf)gruppenkennung","Unterwarengruppe","Artikel Bez",
-            "ArtikelNr_Liste","Anzahl#(lf)Artikel","Aktionsthema","Seite","#WR",
-            "Umsatz, Mio € Aktion","Bon Aktion","Artikel Menge Aktion","Normal Menge Aktion",
-            "Umsatz, Mio € Aktion mehr","Rest-bon Aktion mehr","Menge Aktion mehr","Hauptwarengruppe"
-        })
+    // 3) Сортировка:
+    //    - сначала по флагу (0 наверху, 1 внизу)
+    //    - потом Anbieter по убыванию
+    //    - потом ID по возрастанию
+    t3 = Table.Sort(
+        t2,
+        {
+            {"Anbieter_IsBlank", Order.Ascending},
+            {"Anbieter", Order.Descending},
+            {"ID", Order.Ascending}
+        }
+    ),
+
+    // 4) Удаляем вспомогательный столбец
+    t4 = Table.RemoveColumns(t3, {"Anbieter_IsBlank"})
 in
-    #"Neu angeordnete Spalten"
+    t4
