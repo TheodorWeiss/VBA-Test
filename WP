@@ -1,28 +1,110 @@
-let
-    t0 = #"Предыдущий шаг",
+Да, давай строго по M-коду. По скрину видно, что проблема почти наверняка в шаге Types:
 
-    // 1) Тип для ID (чтобы сортировка была числовая)
-    t1 = Table.TransformColumnTypes(t0, {{"ID", Int64.Type}}),
+Types = Table.TransformColumnTypes(Ren,{
+ {"KW", type text},
+ {"BaseID", type text},
+ {"Aktionsthema", type text},
+ {"Umsatz_Aktion", type number},
+ {"Bon_Aktion", type number},
+ {"Umsatz_Aktionmehr", type number},
+ {"Restbon_Aktionmehr", type number}
+})
 
-    // 2) Флаг пустого Anbieter: пусто/null -> 1 (в конец), иначе 0
-    t2 = Table.AddColumn(
-        t1,
-        "Anbieter_IsBlank",
-        each if [Anbieter] = null or Text.Trim(Text.From([Anbieter])) = "" then 1 else 0,
-        Int64.Type
-    ),
+Если в любой из этих 4 числовых колонок встретится хотя бы одна строка с:
+	•	пустым значением в “неправильном” виде,
+	•	текстом типа -, n.v., #NV, пробелами,
+	•	числом в другом формате (точка/запятая),
+то при загрузке PQ упадёт (и preview это может не показать).
 
-    // 3) Сортировка: ID ↑, внутри ID пустые Anbieter в конец, затем Anbieter ↓
-    t3 = Table.Sort(
-        t2,
-        {
-            {"ID", Order.Ascending},
-            {"Anbieter_IsBlank", Order.Ascending},
-            {"Anbieter", Order.Descending}
-        }
-    ),
+Ниже — два точных шага, без гаданий: (A) найти строки с ошибками, (B) починить типизацию безопасно.
 
-    // 4) Удаляем вспомогательный столбец
-    t4 = Table.RemoveColumns(t3, {"Anbieter_IsBlank"})
+⸻
+
+A) Найти конкретные строки/колонки, где всё ломается
+
+Прямо в Base_Stage в Advanced Editor замени конец так, чтобы временно возвращать ошибки после Types:
+
+Вариант 1 (самый простой)
+
+Добавь шаг после Types:
+
+ErrorsOnly = Table.SelectRowsWithErrors(Types)
 in
-    t4
+    ErrorsOnly
+
+Полный фрагмент (только хвост, вставь перед in):
+
+    Types = Table.TransformColumnTypes(Ren,{
+        {"KW", type text},
+        {"BaseID", type text},
+        {"Aktionsthema", type text},
+        {"Umsatz_Aktion", type number},
+        {"Bon_Aktion", type number},
+        {"Umsatz_Aktionmehr", type number},
+        {"Restbon_Aktionmehr", type number}
+    }),
+    ErrorsOnly = Table.SelectRowsWithErrors(Types)
+in
+    ErrorsOnly
+
+Что произойдёт:
+	•	если есть “плохие” строки — ты увидишь таблицу только из них;
+	•	если таблица пустая — значит ошибка не в Types (тогда будем смотреть следующий шаг/загрузку).
+
+⸻
+
+B) Исправить правильно: безопасная конвертация чисел (try…otherwise)
+
+Если ошибки есть (скорее всего), правильный способ — не TransformColumnTypes для чисел, а конвертация через try Number.From(_) otherwise null.
+
+Заменяй Types на такой блок:
+
+    // текстовые поля
+    TypesText = Table.TransformColumnTypes(Ren,{
+        {"KW", type text},
+        {"BaseID", type text},
+        {"Aktionsthema", type text}
+    }),
+
+    // безопасная конвертация чисел
+    ToNumber = (x as any) as nullable number =>
+        let
+            y = if x is null then null else Text.Trim(Text.From(x)),
+            z = if y = "" then null else y,
+            n = try Number.From(z) otherwise null
+        in
+            n,
+
+    Num1 = Table.TransformColumns(TypesText, {{"Umsatz_Aktion", each ToNumber(_), type number}}),
+    Num2 = Table.TransformColumns(Num1,      {{"Bon_Aktion", each ToNumber(_), type number}}),
+    Num3 = Table.TransformColumns(Num2,      {{"Umsatz_Aktionmehr", each ToNumber(_), type number}}),
+    Num4 = Table.TransformColumns(Num3,      {{"Restbon_Aktionmehr", each ToNumber(_), type number}})
+in
+    Num4
+
+Почему это “железно”:
+	•	любое мусорное значение превратится в null, а не в ошибку;
+	•	загрузка перестанет падать.
+
+⸻
+
+Важное замечание по локали (десятичная запятая)
+
+Number.From(Text.From(x)) обычно корректно работает в Excel/Power Query под твоей локалью, но если источник иногда отдаёт числа с точкой, можно усилить:
+
+Заменить строку:
+
+n = try Number.From(z) otherwise null
+
+на:
+
+n = try Number.FromText(z, "de-DE") otherwise try Number.FromText(z, "en-US") otherwise null
+
+
+⸻
+
+Что делать прямо сейчас (самое рациональное)
+	1.	Вставь ErrorsOnly (раздел A) и посмотри, покажет ли строки.
+	2.	Если покажет — применяй вариант B (safe conversion) и забудешь про “Fehler beim Herunterladen”.
+
+Если хочешь, пришли сюда текстом весь Base_Stage M-код (прямо копипастой) — я верну его уже в финальном виде (с безопасной типизацией и без лишних шагов).
