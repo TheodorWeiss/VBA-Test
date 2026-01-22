@@ -1,110 +1,51 @@
-Да, давай строго по M-коду. По скрину видно, что проблема почти наверняка в шаге Types:
+let
+    // 1. Источник
+    Source = Base_Art,
 
-Types = Table.TransformColumnTypes(Ren,{
- {"KW", type text},
- {"BaseID", type text},
- {"Aktionsthema", type text},
- {"Umsatz_Aktion", type number},
- {"Bon_Aktion", type number},
- {"Umsatz_Aktionmehr", type number},
- {"Restbon_Aktionmehr", type number}
-})
+    // 2. Оставляем только нужные колонки
+    KeepColumns =
+        Table.SelectColumns(
+            Source,
+            {
+                "KW",
+                "Aktionsthema",
+                "Artikel Umsatz Aktion",
+                "Bon Bruttoumsatz (in Mio €)",
+                "Artikel Aktion (lf)mehr",
+                "Rest-bon Bruttoumsatz (in Mio €)",
+                "BaseID"
+            },
+            MissingField.Ignore
+        ),
 
-Если в любой из этих 4 числовых колонок встретится хотя бы одна строка с:
-	•	пустым значением в “неправильном” виде,
-	•	текстом типа -, n.v., #NV, пробелами,
-	•	числом в другом формате (точка/запятая),
-то при загрузке PQ упадёт (и preview это может не показать).
+    // 3. Переименование в рабочие имена
+    Renamed =
+        Table.RenameColumns(
+            KeepColumns,
+            {
+                {"Artikel Umsatz Aktion", "Umsatz_Aktion"},
+                {"Bon Bruttoumsatz (in Mio €)", "Bon_Aktion"},
+                {"Artikel Aktion (lf)mehr", "Umsatz_Aktionmehr"},
+                {"Rest-bon Bruttoumsatz (in Mio €)", "Restbon_Aktionmehr"}
+            },
+            MissingField.Ignore
+        ),
 
-Ниже — два точных шага, без гаданий: (A) найти строки с ошибками, (B) починить типизацию безопасно.
+    // 4. Приведение типов (null-safe)
+    Typed =
+        Table.TransformColumnTypes(
+            Renamed,
+            {
+                {"KW", type text},
+                {"Aktionsthema", type text},
+                {"BaseID", type text},
+                {"Umsatz_Aktion", type number},
+                {"Bon_Aktion", type number},
+                {"Umsatz_Aktionmehr", type number},
+                {"Restbon_Aktionmehr", type number}
+            },
+            "de-DE"
+        )
 
-⸻
-
-A) Найти конкретные строки/колонки, где всё ломается
-
-Прямо в Base_Stage в Advanced Editor замени конец так, чтобы временно возвращать ошибки после Types:
-
-Вариант 1 (самый простой)
-
-Добавь шаг после Types:
-
-ErrorsOnly = Table.SelectRowsWithErrors(Types)
 in
-    ErrorsOnly
-
-Полный фрагмент (только хвост, вставь перед in):
-
-    Types = Table.TransformColumnTypes(Ren,{
-        {"KW", type text},
-        {"BaseID", type text},
-        {"Aktionsthema", type text},
-        {"Umsatz_Aktion", type number},
-        {"Bon_Aktion", type number},
-        {"Umsatz_Aktionmehr", type number},
-        {"Restbon_Aktionmehr", type number}
-    }),
-    ErrorsOnly = Table.SelectRowsWithErrors(Types)
-in
-    ErrorsOnly
-
-Что произойдёт:
-	•	если есть “плохие” строки — ты увидишь таблицу только из них;
-	•	если таблица пустая — значит ошибка не в Types (тогда будем смотреть следующий шаг/загрузку).
-
-⸻
-
-B) Исправить правильно: безопасная конвертация чисел (try…otherwise)
-
-Если ошибки есть (скорее всего), правильный способ — не TransformColumnTypes для чисел, а конвертация через try Number.From(_) otherwise null.
-
-Заменяй Types на такой блок:
-
-    // текстовые поля
-    TypesText = Table.TransformColumnTypes(Ren,{
-        {"KW", type text},
-        {"BaseID", type text},
-        {"Aktionsthema", type text}
-    }),
-
-    // безопасная конвертация чисел
-    ToNumber = (x as any) as nullable number =>
-        let
-            y = if x is null then null else Text.Trim(Text.From(x)),
-            z = if y = "" then null else y,
-            n = try Number.From(z) otherwise null
-        in
-            n,
-
-    Num1 = Table.TransformColumns(TypesText, {{"Umsatz_Aktion", each ToNumber(_), type number}}),
-    Num2 = Table.TransformColumns(Num1,      {{"Bon_Aktion", each ToNumber(_), type number}}),
-    Num3 = Table.TransformColumns(Num2,      {{"Umsatz_Aktionmehr", each ToNumber(_), type number}}),
-    Num4 = Table.TransformColumns(Num3,      {{"Restbon_Aktionmehr", each ToNumber(_), type number}})
-in
-    Num4
-
-Почему это “железно”:
-	•	любое мусорное значение превратится в null, а не в ошибку;
-	•	загрузка перестанет падать.
-
-⸻
-
-Важное замечание по локали (десятичная запятая)
-
-Number.From(Text.From(x)) обычно корректно работает в Excel/Power Query под твоей локалью, но если источник иногда отдаёт числа с точкой, можно усилить:
-
-Заменить строку:
-
-n = try Number.From(z) otherwise null
-
-на:
-
-n = try Number.FromText(z, "de-DE") otherwise try Number.FromText(z, "en-US") otherwise null
-
-
-⸻
-
-Что делать прямо сейчас (самое рациональное)
-	1.	Вставь ErrorsOnly (раздел A) и посмотри, покажет ли строки.
-	2.	Если покажет — применяй вариант B (safe conversion) и забудешь про “Fehler beim Herunterladen”.
-
-Если хочешь, пришли сюда текстом весь Base_Stage M-код (прямо копипастой) — я верну его уже в финальном виде (с безопасной типизацией и без лишних шагов).
+    Typed
