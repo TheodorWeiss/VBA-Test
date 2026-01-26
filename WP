@@ -135,4 +135,88 @@ in
 
 ⸻
 
-Если ты хочешь, я следующим шагом добавлю “взвешивание” по похожести (например WeightedAvgRatio = SUM(Ratio*MatchPct)/SUM(MatchPct)), это делается одной заменой в GroupTarget.
+Если ты хочешь, я следующим шагом добавлю “взвешивание” по похожести (например WeightedAvgRatio = SUM(Ratio*MatchPct)/SUM(MatchPct)), это делается одной заменой в GroupTarget
+
+Да, по скриншоту это действительно “ерунда” — но она диагностируемая: в колонке Artikel у тебя стоит Record, а на шаге 1 мы ожидаем текст/число артикула, по одному на строку.
+
+Что мы ожидаем на шаге 1 (Target_Exploded / Base_Exploded)
+
+Результат должен быть такой:
+	•	TargetID (длинная строка с ;)
+	•	Aktionsthema (например, Knüller 1)
+	•	Artikel = один конкретный артикул (например 9329, 9332, 437795 …), не Record
+	•	(и дальше метрика типа Umsatz_Target)
+
+То есть: каждый TargetID превращается в много строк — по количеству уникальных артиклей внутри него.
+
+Если TargetID содержит 8 артиклей, то для этого TargetID будет 8 строк.
+
+⸻
+
+Почему у тебя “Record” вместо артикула
+
+Это значит, что fxSplitArtikel([TargetID]) возвращает список записей (list of records), а не список значений (list of text/number).
+
+Power Query при ExpandListColumn честно разворачивает список, но каждый элемент списка — это Record, поэтому ты видишь Record.
+
+⸻
+
+Как быстро исправить (2 варианта)
+
+Вариант A (быстрый): “достать поле из Record” прямо в Target_Exploded
+
+Сделай так: после ExpandListColumn добавь шаг ExpandRecordColumn.
+
+Пример (вставь вместо твоего текущего Target_Exploded):
+
+let
+    Source = Target_Stage,
+    AddList = Table.AddColumn(Source, "ArtikelList", each fxSplitArtikel([TargetID]), type list),
+    ExpandList = Table.ExpandListColumn(AddList, "ArtikelList"),
+
+    // ВАЖНО: если ArtikelList = Record, раскрываем Record в поле
+    ExpandRec = Table.ExpandRecordColumn(ExpandList, "ArtikelList", {"Artikel"}, {"Artikel"}),
+
+    Keep = Table.SelectColumns(ExpandRec, {"TargetID","Aktionsthema","Artikel","Umsatz_Aktionmehr"}),
+    Distinct = Table.Distinct(Keep, {"TargetID","Aktionsthema","Artikel"})
+in
+    Distinct
+
+Но тут есть ключевой момент: я предположил, что внутри Record поле называется “Artikel”.
+Если оно называется иначе (например "Value", "ID", "ArtikelNr"), Power Query скажет, что поле не найдено.
+
+Как узнать точное имя поля:
+	1.	Открой fxSplitArtikel
+	2.	В Power Query нажми “Invoke / Aufrufen” (или создай тестовый запрос = fxSplitArtikel("9329;9332"))
+	3.	Посмотри, как выглядит результат: какие там имена полей.
+
+⸻
+
+Вариант B (правильный): починить fxSplitArtikel, чтобы она возвращала list of text
+
+Вот эталон функции, которая возвращает список текстов, без таблиц и record’ов:
+
+( id as nullable text ) as list =>
+let
+    t = if id = null then "" else id,
+    parts = Text.Split(t, ";"),
+    trimmed = List.Transform(parts, each Text.Trim(_)),
+    nonEmpty = List.Select(trimmed, each _ <> ""),
+    distinct = List.Distinct(nonEmpty)
+in
+    distinct
+
+После этого Artikel будет сразу нормальным значением, и никакие ExpandRecordColumn не нужны.
+
+⸻
+
+Мини-проверка “правильности” шага 1
+
+После исправления открой Target_Exploded и проверь:
+	1.	Artikel содержит числа/текст, а не Record
+	2.	Фильтром по одному TargetID ты видишь список артиклей по строкам
+	3.	Количество строк примерно равно сумме AnzahlArtikel (если у тебя где-то есть такая колонка), с учётом Distinct
+
+⸻
+
+Если ты пришлёшь (просто текстом) M-код fxSplitArtikel или скажешь, какое поле внутри Record (что там в записи), я дам точный рабочий кусок кода без предположений по имени поля..
