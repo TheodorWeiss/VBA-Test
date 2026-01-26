@@ -1,51 +1,138 @@
+Понимаю. fxSplitArtikel — это как раз наша “ступенька”, чтобы не сравнивать строки целиком, а разложить TargetID/BaseID на список артиклей и дальше считать пересечение.
+
+Ниже даю дальше 3 шага (минимум, но уже рабочая схема без зависаний). Логика такая:
+мы не делаем “каждый Target против каждого Base” (это убьёт Excel), а генерируем кандидатов через совпадения по отдельным артикулам.
+
+⸻
+
+Шаг 1. Сделать “взорванные” таблицы (Explode) по артикулам
+
+1.1 Target_Exploded
+
+Создай новый запрос (Nur Verbindung) Target_Exploded:
+
 let
-    // 1. Источник
-    Source = Base_Art,
-
-    // 2. Оставляем только нужные колонки
-    KeepColumns =
-        Table.SelectColumns(
-            Source,
-            {
-                "KW",
-                "Aktionsthema",
-                "Artikel Umsatz Aktion",
-                "Bon Bruttoumsatz (in Mio €)",
-                "Artikel Aktion (lf)mehr",
-                "Rest-bon Bruttoumsatz (in Mio €)",
-                "BaseID"
-            },
-            MissingField.Ignore
-        ),
-
-    // 3. Переименование в рабочие имена
-    Renamed =
-        Table.RenameColumns(
-            KeepColumns,
-            {
-                {"Artikel Umsatz Aktion", "Umsatz_Aktion"},
-                {"Bon Bruttoumsatz (in Mio €)", "Bon_Aktion"},
-                {"Artikel Aktion (lf)mehr", "Umsatz_Aktionmehr"},
-                {"Rest-bon Bruttoumsatz (in Mio €)", "Restbon_Aktionmehr"}
-            },
-            MissingField.Ignore
-        ),
-
-    // 4. Приведение типов (null-safe)
-    Typed =
-        Table.TransformColumnTypes(
-            Renamed,
-            {
-                {"KW", type text},
-                {"Aktionsthema", type text},
-                {"BaseID", type text},
-                {"Umsatz_Aktion", type number},
-                {"Bon_Aktion", type number},
-                {"Umsatz_Aktionmehr", type number},
-                {"Restbon_Aktionmehr", type number}
-            },
-            "de-DE"
-        )
-
+    Source = Target_Stage,
+    AddList = Table.AddColumn(Source, "ArtikelList", each fxSplitArtikel([TargetID]), type list),
+    Expand = Table.ExpandListColumn(AddList, "ArtikelList"),
+    Rename = Table.RenameColumns(Expand, {{"ArtikelList","Artikel"}}),
+    Keep = Table.SelectColumns(Rename, {"TargetID","Aktionsthema","Artikel","Umsatz_Aktionmehr"}),
+    Distinct = Table.Distinct(Keep, {"TargetID","Aktionsthema","Artikel"})
 in
-    Typed
+    Distinct
+
+1.2 Base_Exploded
+
+Аналогично новый запрос Base_Exploded:
+
+let
+    Source = Base_Stage,
+    AddList = Table.AddColumn(Source, "ArtikelList", each fxSplitArtikel([BaseID]), type list),
+    Expand = Table.ExpandListColumn(AddList, "ArtikelList"),
+    Rename = Table.RenameColumns(Expand, {{"ArtikelList","Artikel"}}),
+    Keep = Table.SelectColumns(Rename, {"BaseID","KW","Aktionsthema","Artikel","Umsatz_Aktionmehr","Restbon_Aktionmehr"}),
+    Distinct = Table.Distinct(Keep, {"BaseID","KW","Aktionsthema","Artikel"})
+in
+    Distinct
+
+Важно: мы сразу делаем Distinct по (ID, Thema, Artikel), чтобы не завышать совпадения.
+
+⸻
+
+Шаг 2. Посчитать “похожесть относительно Target” (MatchPct) через join по Artikel + Aktionsthema
+
+2.1 Сначала размер Target (сколько уникальных артиклей в TargetID)
+
+Запрос Target_Count:
+
+let
+    Source = Target_Exploded,
+    Group = Table.Group(
+        Source,
+        {"TargetID","Aktionsthema"},
+        {{"TargetCnt", each List.Count(List.Distinct([Artikel])), Int64.Type},
+         {"Umsatz_Target", each List.First([Umsatz_Aktionmehr]), type number}}
+    )
+in
+    Group
+
+2.2 Таблица совпадений Target–Base через общий Artikel
+
+Запрос TB_MatchesRaw:
+
+let
+    T = Target_Exploded,
+    B = Base_Exploded,
+    Join = Table.NestedJoin(T, {"Aktionsthema","Artikel"}, B, {"Aktionsthema","Artikel"}, "B", JoinKind.Inner),
+    Expand = Table.ExpandTableColumn(Join, "B", {"BaseID","KW"}, {"BaseID","KW"}),
+    Keep = Table.SelectColumns(Expand, {"TargetID","Aktionsthema","BaseID","KW","Artikel"}),
+    Distinct = Table.Distinct(Keep, {"TargetID","Aktionsthema","BaseID","KW","Artikel"})
+in
+    Distinct
+
+2.3 MatchPct = (совпало артиклей) / (кол-во артиклей в Target)
+
+Запрос TB_Similarity:
+
+let
+    Source = TB_MatchesRaw,
+    Intersections = Table.Group(
+        Source,
+        {"TargetID","Aktionsthema","BaseID","KW"},
+        {{"MatchCnt", each List.Count([Artikel]), Int64.Type}}
+    ),
+    TC = Target_Count,
+    JoinTC = Table.NestedJoin(Intersections, {"TargetID","Aktionsthema"}, TC, {"TargetID","Aktionsthema"}, "TC", JoinKind.LeftOuter),
+    ExpandTC = Table.ExpandTableColumn(JoinTC, "TC", {"TargetCnt","Umsatz_Target"}, {"TargetCnt","Umsatz_Target"}),
+    AddPct = Table.AddColumn(ExpandTC, "MatchPct", each if [TargetCnt]=null or [TargetCnt]=0 then null else Number.From([MatchCnt]) / Number.From([TargetCnt]), type number),
+    Filter = Table.SelectRows(AddPct, each [MatchPct] <> null and [MatchPct] >= pMinSim)
+in
+    Filter
+
+Теперь у тебя есть список “кандидатов” Base-строк (по KW) для каждого Target, уже отфильтрованный по порогу (например 0,1).
+
+⸻
+
+Шаг 3. Оценить Restbon для Target через среднее отношение Restbon/Umsatz у похожих Base
+
+Запрос Target_Restbon_Est (финальный, можно потом грузить на лист):
+
+let
+    Sim = TB_Similarity,
+
+    // Подтягиваем фактические Base метрики (Umsatz/Restbon) по BaseID+KW+Aktionsthema
+    B = Base_Stage,
+    JoinB = Table.NestedJoin(Sim, {"BaseID","KW","Aktionsthema"}, B, {"BaseID","KW","Aktionsthema"}, "B", JoinKind.LeftOuter),
+    ExpandB = Table.ExpandTableColumn(JoinB, "B", {"Umsatz_Aktionmehr","Restbon_Aktionmehr"}, {"Umsatz_Base","Restbon_Base"}),
+
+    // считаем Ratio по базе
+    AddRatio = Table.AddColumn(ExpandB, "Ratio", each
+        let u = [Umsatz_Base], r = [Restbon_Base]
+        in if u=null or u=0 or r=null then null else Number.From(r)/Number.From(u)
+    , type number),
+
+    // (пока простое среднее; позже добавим веса по MatchPct)
+    GroupTarget = Table.Group(
+        AddRatio,
+        {"TargetID","Aktionsthema"},
+        {
+            {"AvgRatio", each List.Average(List.RemoveNulls([Ratio])), type number},
+            {"Umsatz_Target", each List.First([Umsatz_Target]), type number}
+        }
+    ),
+
+    AddRestbonEst = Table.AddColumn(GroupTarget, "Restbon_Est", each if [AvgRatio]=null or [Umsatz_Target]=null then null else [AvgRatio]*[Umsatz_Target], type number)
+in
+    AddRestbonEst
+
+
+⸻
+
+Что важно по твоим условиям
+	•	KW в Target игнорируем — уже так: он нигде не участвует.
+	•	Aktionsthema обязателен — у нас join по Aktionsthema + Artikel, то есть если Target = “Knüller 1”, матчи идут только по “Knüller 1”.
+	•	Порог pMinSim меняется параметром (у тебя он уже есть).
+
+⸻
+
+Если ты хочешь, я следующим шагом добавлю “взвешивание” по похожести (например WeightedAvgRatio = SUM(Ratio*MatchPct)/SUM(MatchPct)), это делается одной заменой в GroupTarget.
