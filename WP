@@ -1,30 +1,34 @@
 (txt as nullable text) as nullable text =>
 let
-    // 0. Защита от null
-    SourceText =
-        if txt = null then ""
-        else Text.From(txt),
+    // 0) защита от null
+    SourceText = if txt = null then "" else Text.From(txt),
 
-    // 1. Нормализуем ВСЕ разделители → ###
-    //    учитываем |, ###, и варианты с пробелами
+    // 1) нормализуем разделители -> "###"
+    //    делаем это через список замен (надёжно и читаемо)
+    ReplPairs = {
+        {" | ", "###"},
+        {"|",   "###"},
+        {" #### ", "###"},
+        {"####", "###"},
+        {"##",  "###"}
+    },
+
     Normalized =
-        SourceText
-        |> Text.Replace(_, " | ", "###")
-        |> Text.Replace(_, "|", "###")
-        |> Text.Replace(_, " #### ", "###")
-        |> Text.Replace(_, "####", "###")
-        |> Text.Replace(_, "##", "###"),
+        List.Accumulate(
+            ReplPairs,
+            SourceText,
+            (state as text, pair as list) => Text.Replace(state, pair{0}, pair{1})
+        ),
 
-    // 2. Разбиваем на сегменты
+    // 2) разбиваем на сегменты по ###
     Segments =
         List.Transform(
             Text.Split(Normalized, "###"),
             each Text.Trim(_)
         ),
 
-    // 3. Функция извлечения ВСЕХ числовых последовательностей длиной ≥ 4
-    ExtractNums =
-        (s as text) as list =>
+    // 3) извлечение всех числовых последовательностей длиной >= 4 из одного сегмента
+    ExtractNums = (s as text) as list =>
         let
             chars = Text.ToList(s),
 
@@ -33,32 +37,26 @@ let
                     () => [i = 0, cur = ""],
                     each [i] < List.Count(chars),
                     each
-                        if chars{[i]} >= "0" and chars{[i]} <= "9" then
-                            [i = [i] + 1, cur = [cur] & chars{[i]}]
-                        else
-                            [i = [i] + 1, cur = ""],
+                        let
+                            ch = chars{[i]},
+                            isDigit = ch >= "0" and ch <= "9",
+                            newCur = if isDigit then [cur] & ch else ""
+                        in
+                            [i = [i] + 1, cur = newCur],
                     each [cur]
                 ),
 
-            valid =
-                List.Select(scan, each Text.Length(_) >= 4)
+            valid = List.Select(scan, each Text.Length(_) >= 4)
         in
             valid,
 
-    // 4. Применяем ко всем сегментам
-    AllNums =
-        List.Combine(
-            List.Transform(Segments, each ExtractNums(_))
-        ),
+    // 4) применяем ко всем сегментам и объединяем
+    AllNums = List.Combine(List.Transform(Segments, each ExtractNums(_))),
 
-    // 5. Убираем дубликаты (важно!)
-    DistinctNums =
-        List.Distinct(AllNums),
+    // 5) убираем дубликаты (если нужно сохранять порядок — ок, так и будет)
+    DistinctNums = List.Distinct(AllNums),
 
-    // 6. Финальный формат
-    Result =
-        if List.Count(DistinctNums) = 0
-        then null
-        else Text.Combine(DistinctNums, "###")
+    // 6) финальный результат
+    Result = if List.Count(DistinctNums) = 0 then null else Text.Combine(DistinctNums, "###")
 in
     Result
