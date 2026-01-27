@@ -1,23 +1,64 @@
-Hallo Norbert,
+(txt as nullable text) as nullable text =>
+let
+    // 0. Защита от null
+    SourceText =
+        if txt = null then ""
+        else Text.From(txt),
 
-ich wollte dir kurz ein Update zum Thema Restbon / Bon (NMDAX) geben.
+    // 1. Нормализуем ВСЕ разделители → ###
+    //    учитываем |, ###, и варианты с пробелами
+    Normalized =
+        SourceText
+        |> Text.Replace(_, " | ", "###")
+        |> Text.Replace(_, "|", "###")
+        |> Text.Replace(_, " #### ", "###")
+        |> Text.Replace(_, "####", "###")
+        |> Text.Replace(_, "##", "###"),
 
-Ich habe inzwischen einen funktionsfähigen Auswertungs-Workflow aufgebaut, mit dem sich Bon und Restbon für beliebige Artikel-Sets (von einzelnen Artikeln bis hin zu großen Sets mit >100 Artikeln) berechnen lassen.  
-Die Logik berücksichtigt dabei:
-- das Aktionsthema,
-- die strukturelle Ähnlichkeit von Artikel-Sets (konfigurierbarer Schwellenwert),
-- historische Base-Daten über mehrere Wochen hinweg.
+    // 2. Разбиваем на сегменты
+    Segments =
+        List.Transform(
+            Text.Split(Normalized, "###"),
+            each Text.Trim(_)
+        ),
 
-Technisch ist das aktuell als flexibles Analyse-Tool umgesetzt (kein fixer Lookup), d. h.:
-> Man gibt Artikel-Set + Aktionsthema + Umsatz_Aktion / Umsatz_Aktionmehr vor  
-> → das Tool liefert Bon / Restbon auf Basis vergleichbarer historischer Aktionen.
+    // 3. Функция извлечения ВСЕХ числовых последовательностей длиной ≥ 4
+    ExtractNums =
+        (s as text) as list =>
+        let
+            chars = Text.ToList(s),
 
-Dabei ist mir aufgefallen, dass eine vollständig „fixe“ Tabelle für alle möglichen Artikel-Kombinationen praktisch nicht machbar ist (sehr viele Kombinationen).  
-Stattdessen sehe ich drei sinnvolle Weiterentwicklungsrichtungen und würde gern mit dir abstimmen, welche davon fachlich gewünscht ist:
+            scan =
+                List.Generate(
+                    () => [i = 0, cur = ""],
+                    each [i] < List.Count(chars),
+                    each
+                        if chars{[i]} >= "0" and chars{[i]} <= "9" then
+                            [i = [i] + 1, cur = [cur] & chars{[i]}]
+                        else
+                            [i = [i] + 1, cur = ""],
+                    each [cur]
+                ),
 
-1) Das Tool so belassen als allgemeinen Rechner für Bon/Restbon je Set  
-2) Aufbau eines Caches für tatsächlich vorkommende Sets („einmal berechnet → wiederverwendbar“)  
-3) Aufbau eines Basis-Lookups auf Artikelebene (Artikel × Thema), aus dem Set-Werte aggregiert werden
+            valid =
+                List.Select(scan, each Text.Length(_) >= 4)
+        in
+            valid,
 
-Sag mir gern, in welche Richtung du denkst bzw. was für dich das eigentliche Zielbild ist, dann richte ich den nächsten Schritt gezielt darauf aus.
+    // 4. Применяем ко всем сегментам
+    AllNums =
+        List.Combine(
+            List.Transform(Segments, each ExtractNums(_))
+        ),
 
+    // 5. Убираем дубликаты (важно!)
+    DistinctNums =
+        List.Distinct(AllNums),
+
+    // 6. Финальный формат
+    Result =
+        if List.Count(DistinctNums) = 0
+        then null
+        else Text.Combine(DistinctNums, "###")
+in
+    Result
