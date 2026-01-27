@@ -1,222 +1,118 @@
-Понимаю. fxSplitArtikel — это как раз наша “ступенька”, чтобы не сравнивать строки целиком, а разложить TargetID/BaseID на список артиклей и дальше считать пересечение.
-
-Ниже даю дальше 3 шага (минимум, но уже рабочая схема без зависаний). Логика такая:
-мы не делаем “каждый Target против каждого Base” (это убьёт Excel), а генерируем кандидатов через совпадения по отдельным артикулам.
-
-⸻
-
-Шаг 1. Сделать “взорванные” таблицы (Explode) по артикулам
-
-1.1 Target_Exploded
-
-Создай новый запрос (Nur Verbindung) Target_Exploded:
-
 let
-    Source = Target_Stage,
-    AddList = Table.AddColumn(Source, "ArtikelList", each fxSplitArtikel([TargetID]), type list),
-    Expand = Table.ExpandListColumn(AddList, "ArtikelList"),
-    Rename = Table.RenameColumns(Expand, {{"ArtikelList","Artikel"}}),
-    Keep = Table.SelectColumns(Rename, {"TargetID","Aktionsthema","Artikel","Umsatz_Aktionmehr"}),
-    Distinct = Table.Distinct(Keep, {"TargetID","Aktionsthema","Artikel"})
-in
-    Distinct
+    // === параметры ===
+    pMinSim = 0.1,
+    Culture = "de-DE",
 
-1.2 Base_Exploded
+    // безопасная конвертация в число
+    ToNum = (x as any) as nullable number =>
+        let
+            r =
+                try
+                    if x is number then x
+                    else Number.FromText(Text.From(x), Culture)
+                otherwise null
+        in
+            r,
 
-Аналогично новый запрос Base_Exploded:
+    // === вход: Similarity ===
+    Sim0 = TB_Similarity,
+    Sim = Table.SelectRows(Sim0, each [MatchPct] <> null and [MatchPct] >= pMinSim),
 
-let
-    Source = Base_Stage,
-    AddList = Table.AddColumn(Source, "ArtikelList", each fxSplitArtikel([BaseID]), type list),
-    Expand = Table.ExpandListColumn(AddList, "ArtikelList"),
-    Rename = Table.RenameColumns(Expand, {{"ArtikelList","Artikel"}}),
-    Keep = Table.SelectColumns(Rename, {"BaseID","KW","Aktionsthema","Artikel","Umsatz_Aktionmehr","Restbon_Aktionmehr"}),
-    Distinct = Table.Distinct(Keep, {"BaseID","KW","Aktionsthema","Artikel"})
-in
-    Distinct
-
-Важно: мы сразу делаем Distinct по (ID, Thema, Artikel), чтобы не завышать совпадения.
-
-⸻
-
-Шаг 2. Посчитать “похожесть относительно Target” (MatchPct) через join по Artikel + Aktionsthema
-
-2.1 Сначала размер Target (сколько уникальных артиклей в TargetID)
-
-Запрос Target_Count:
-
-let
-    Source = Target_Exploded,
-    Group = Table.Group(
-        Source,
-        {"TargetID","Aktionsthema"},
-        {{"TargetCnt", each List.Count(List.Distinct([Artikel])), Int64.Type},
-         {"Umsatz_Target", each List.First([Umsatz_Aktionmehr]), type number}}
-    )
-in
-    Group
-
-2.2 Таблица совпадений Target–Base через общий Artikel
-
-Запрос TB_MatchesRaw:
-
-let
-    T = Target_Exploded,
-    B = Base_Exploded,
-    Join = Table.NestedJoin(T, {"Aktionsthema","Artikel"}, B, {"Aktionsthema","Artikel"}, "B", JoinKind.Inner),
-    Expand = Table.ExpandTableColumn(Join, "B", {"BaseID","KW"}, {"BaseID","KW"}),
-    Keep = Table.SelectColumns(Expand, {"TargetID","Aktionsthema","BaseID","KW","Artikel"}),
-    Distinct = Table.Distinct(Keep, {"TargetID","Aktionsthema","BaseID","KW","Artikel"})
-in
-    Distinct
-
-2.3 MatchPct = (совпало артиклей) / (кол-во артиклей в Target)
-
-Запрос TB_Similarity:
-
-let
-    Source = TB_MatchesRaw,
-    Intersections = Table.Group(
-        Source,
-        {"TargetID","Aktionsthema","BaseID","KW"},
-        {{"MatchCnt", each List.Count([Artikel]), Int64.Type}}
+    // === подтягиваем Target Umsatz для обеих пар ===
+    JoinT = Table.NestedJoin(
+        Sim,
+        {"TargetID", "Aktionshema"},
+        Target_Stage,
+        {"TargetID", "Aktionshema"},
+        "T",
+        JoinKind.LeftOuter
     ),
-    TC = Target_Count,
-    JoinTC = Table.NestedJoin(Intersections, {"TargetID","Aktionsthema"}, TC, {"TargetID","Aktionsthema"}, "TC", JoinKind.LeftOuter),
-    ExpandTC = Table.ExpandTableColumn(JoinTC, "TC", {"TargetCnt","Umsatz_Target"}, {"TargetCnt","Umsatz_Target"}),
-    AddPct = Table.AddColumn(ExpandTC, "MatchPct", each if [TargetCnt]=null or [TargetCnt]=0 then null else Number.From([MatchCnt]) / Number.From([TargetCnt]), type number),
-    Filter = Table.SelectRows(AddPct, each [MatchPct] <> null and [MatchPct] >= pMinSim)
-in
-    Filter
+    ExpandT = Table.ExpandTableColumn(
+        JoinT,
+        "T",
+        {"Umsatz_Aktion", "Umsatz_Aktionmehr"},
+        {"Umsatz_Target_Bon", "Umsatz_Target_Rest"}
+    ),
 
-Теперь у тебя есть список “кандидатов” Base-строк (по KW) для каждого Target, уже отфильтрованный по порогу (например 0,1).
+    // === подтягиваем Base метрики (обе пары) по BaseID + KW + Aktionshema ===
+    JoinB = Table.NestedJoin(
+        ExpandT,
+        {"BaseID", "KW", "Aktionshema"},
+        Base_Stage,
+        {"BaseID", "KW", "Aktionshema"},
+        "B",
+        JoinKind.LeftOuter
+    ),
+    ExpandB = Table.ExpandTableColumn(
+        JoinB,
+        "B",
+        {"Umsatz_Aktion", "Bon_Aktion", "Umsatz_Aktionmehr", "Restbon_Aktionmehr"},
+        {"Umsatz_Base_Bon", "Bon_Base", "Umsatz_Base_Rest", "Restbon_Base"}
+    ),
 
-⸻
-
-Шаг 3. Оценить Restbon для Target через среднее отношение Restbon/Umsatz у похожих Base
-
-Запрос Target_Restbon_Est (финальный, можно потом грузить на лист):
-
-let
-    Sim = TB_Similarity,
-
-    // Подтягиваем фактические Base метрики (Umsatz/Restbon) по BaseID+KW+Aktionsthema
-    B = Base_Stage,
-    JoinB = Table.NestedJoin(Sim, {"BaseID","KW","Aktionsthema"}, B, {"BaseID","KW","Aktionsthema"}, "B", JoinKind.LeftOuter),
-    ExpandB = Table.ExpandTableColumn(JoinB, "B", {"Umsatz_Aktionmehr","Restbon_Aktionmehr"}, {"Umsatz_Base","Restbon_Base"}),
-
-    // считаем Ratio по базе
-    AddRatio = Table.AddColumn(ExpandB, "Ratio", each
-        let u = [Umsatz_Base], r = [Restbon_Base]
-        in if u=null or u=0 or r=null then null else Number.From(r)/Number.From(u)
-    , type number),
-
-    // (пока простое среднее; позже добавим веса по MatchPct)
-    GroupTarget = Table.Group(
-        AddRatio,
-        {"TargetID","Aktionsthema"},
+    // === приведение типов ===
+    Typed = Table.TransformColumns(
+        ExpandB,
         {
-            {"AvgRatio", each List.Average(List.RemoveNulls([Ratio])), type number},
-            {"Umsatz_Target", each List.First([Umsatz_Target]), type number}
+            {"Umsatz_Target_Bon", each ToNum(_), type nullable number},
+            {"Umsatz_Target_Rest", each ToNum(_), type nullable number},
+            {"Umsatz_Base_Bon", each ToNum(_), type nullable number},
+            {"Bon_Base", each ToNum(_), type nullable number},
+            {"Umsatz_Base_Rest", each ToNum(_), type nullable number},
+            {"Restbon_Base", each ToNum(_), type nullable number}
         }
     ),
 
-    AddRestbonEst = Table.AddColumn(GroupTarget, "Restbon_Est", each if [AvgRatio]=null or [Umsatz_Target]=null then null else [AvgRatio]*[Umsatz_Target], type number)
+    // === чистим Base: нули/отрицательные убираем (по каждой паре отдельно считаем ratio) ===
+    AddRatios = Table.AddColumn(
+        Typed,
+        "Ratio_Bon",
+        each if [Umsatz_Base_Bon] <> null and [Umsatz_Base_Bon] > 0 and [Bon_Base] <> null and [Bon_Base] > 0
+             then [Bon_Base] / [Umsatz_Base_Bon]
+             else null,
+        type nullable number
+    ),
+    AddRatios2 = Table.AddColumn(
+        AddRatios,
+        "Ratio_Rest",
+        each if [Umsatz_Base_Rest] <> null and [Umsatz_Base_Rest] > 0 and [Restbon_Base] <> null and [Restbon_Base] > 0
+             then [Restbon_Base] / [Umsatz_Base_Rest]
+             else null,
+        type nullable number
+    ),
+
+    // === агрегируем по TargetID + Aktionshema ===
+    GroupTarget = Table.Group(
+        AddRatios2,
+        {"TargetID", "Aktionshema"},
+        {
+            {"AvgRatio_Bon", each List.Average(List.RemoveNulls([Ratio_Bon])), type nullable number},
+            {"AvgRatio_Rest", each List.Average(List.RemoveNulls([Ratio_Rest])), type nullable number},
+
+            {"Umsatz_Target_Bon", each List.First(List.RemoveNulls([Umsatz_Target_Bon])), type nullable number},
+            {"Umsatz_Target_Rest", each List.First(List.RemoveNulls([Umsatz_Target_Rest])), type nullable number},
+
+            {"N_BaseRows_Bon", each List.Count(List.RemoveNulls([Ratio_Bon])), Int64.Type},
+            {"N_BaseRows_Rest", each List.Count(List.RemoveNulls([Ratio_Rest])), Int64.Type}
+        }
+    ),
+
+    // === оценки ===
+    AddBonEst = Table.AddColumn(
+        GroupTarget,
+        "Bon_Est",
+        each if [AvgRatio_Bon] = null or [Umsatz_Target_Bon] = null or [Umsatz_Target_Bon] <= 0
+             then null
+             else [AvgRatio_Bon] * [Umsatz_Target_Bon],
+        type nullable number
+    ),
+    AddRestbonEst = Table.AddColumn(
+        AddBonEst,
+        "Restbon_Est",
+        each if [AvgRatio_Rest] = null or [Umsatz_Target_Rest] = null or [Umsatz_Target_Rest] <= 0
+             then null
+             else [AvgRatio_Rest] * [Umsatz_Target_Rest],
+        type nullable number
+    )
 in
     AddRestbonEst
-
-
-⸻
-
-Что важно по твоим условиям
-	•	KW в Target игнорируем — уже так: он нигде не участвует.
-	•	Aktionsthema обязателен — у нас join по Aktionsthema + Artikel, то есть если Target = “Knüller 1”, матчи идут только по “Knüller 1”.
-	•	Порог pMinSim меняется параметром (у тебя он уже есть).
-
-⸻
-
-Если ты хочешь, я следующим шагом добавлю “взвешивание” по похожести (например WeightedAvgRatio = SUM(Ratio*MatchPct)/SUM(MatchPct)), это делается одной заменой в GroupTarget
-
-Да, по скриншоту это действительно “ерунда” — но она диагностируемая: в колонке Artikel у тебя стоит Record, а на шаге 1 мы ожидаем текст/число артикула, по одному на строку.
-
-Что мы ожидаем на шаге 1 (Target_Exploded / Base_Exploded)
-
-Результат должен быть такой:
-	•	TargetID (длинная строка с ;)
-	•	Aktionsthema (например, Knüller 1)
-	•	Artikel = один конкретный артикул (например 9329, 9332, 437795 …), не Record
-	•	(и дальше метрика типа Umsatz_Target)
-
-То есть: каждый TargetID превращается в много строк — по количеству уникальных артиклей внутри него.
-
-Если TargetID содержит 8 артиклей, то для этого TargetID будет 8 строк.
-
-⸻
-
-Почему у тебя “Record” вместо артикула
-
-Это значит, что fxSplitArtikel([TargetID]) возвращает список записей (list of records), а не список значений (list of text/number).
-
-Power Query при ExpandListColumn честно разворачивает список, но каждый элемент списка — это Record, поэтому ты видишь Record.
-
-⸻
-
-Как быстро исправить (2 варианта)
-
-Вариант A (быстрый): “достать поле из Record” прямо в Target_Exploded
-
-Сделай так: после ExpandListColumn добавь шаг ExpandRecordColumn.
-
-Пример (вставь вместо твоего текущего Target_Exploded):
-
-let
-    Source = Target_Stage,
-    AddList = Table.AddColumn(Source, "ArtikelList", each fxSplitArtikel([TargetID]), type list),
-    ExpandList = Table.ExpandListColumn(AddList, "ArtikelList"),
-
-    // ВАЖНО: если ArtikelList = Record, раскрываем Record в поле
-    ExpandRec = Table.ExpandRecordColumn(ExpandList, "ArtikelList", {"Artikel"}, {"Artikel"}),
-
-    Keep = Table.SelectColumns(ExpandRec, {"TargetID","Aktionsthema","Artikel","Umsatz_Aktionmehr"}),
-    Distinct = Table.Distinct(Keep, {"TargetID","Aktionsthema","Artikel"})
-in
-    Distinct
-
-Но тут есть ключевой момент: я предположил, что внутри Record поле называется “Artikel”.
-Если оно называется иначе (например "Value", "ID", "ArtikelNr"), Power Query скажет, что поле не найдено.
-
-Как узнать точное имя поля:
-	1.	Открой fxSplitArtikel
-	2.	В Power Query нажми “Invoke / Aufrufen” (или создай тестовый запрос = fxSplitArtikel("9329;9332"))
-	3.	Посмотри, как выглядит результат: какие там имена полей.
-
-⸻
-
-Вариант B (правильный): починить fxSplitArtikel, чтобы она возвращала list of text
-
-Вот эталон функции, которая возвращает список текстов, без таблиц и record’ов:
-
-( id as nullable text ) as list =>
-let
-    t = if id = null then "" else id,
-    parts = Text.Split(t, ";"),
-    trimmed = List.Transform(parts, each Text.Trim(_)),
-    nonEmpty = List.Select(trimmed, each _ <> ""),
-    distinct = List.Distinct(nonEmpty)
-in
-    distinct
-
-После этого Artikel будет сразу нормальным значением, и никакие ExpandRecordColumn не нужны.
-
-⸻
-
-Мини-проверка “правильности” шага 1
-
-После исправления открой Target_Exploded и проверь:
-	1.	Artikel содержит числа/текст, а не Record
-	2.	Фильтром по одному TargetID ты видишь список артиклей по строкам
-	3.	Количество строк примерно равно сумме AnzahlArtikel (если у тебя где-то есть такая колонка), с учётом Distinct
-
-⸻
-
-Если ты пришлёшь (просто текстом) M-код fxSplitArtikel или скажешь, какое поле внутри Record (что там в записи), я дам точный рабочий кусок кода без предположений по имени поля..
