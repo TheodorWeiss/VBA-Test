@@ -1,118 +1,23 @@
-let
-    // === параметры ===
-    pMinSim = 0.1,
-    Culture = "de-DE",
+Hallo Norbert,
 
-    // безопасная конвертация в число
-    ToNum = (x as any) as nullable number =>
-        let
-            r =
-                try
-                    if x is number then x
-                    else Number.FromText(Text.From(x), Culture)
-                otherwise null
-        in
-            r,
+ich wollte dir kurz ein Update zum Thema Restbon / Bon (NMDAX) geben.
 
-    // === вход: Similarity ===
-    Sim0 = TB_Similarity,
-    Sim = Table.SelectRows(Sim0, each [MatchPct] <> null and [MatchPct] >= pMinSim),
+Ich habe inzwischen einen funktionsfähigen Auswertungs-Workflow aufgebaut, mit dem sich Bon und Restbon für beliebige Artikel-Sets (von einzelnen Artikeln bis hin zu großen Sets mit >100 Artikeln) berechnen lassen.  
+Die Logik berücksichtigt dabei:
+- das Aktionsthema,
+- die strukturelle Ähnlichkeit von Artikel-Sets (konfigurierbarer Schwellenwert),
+- historische Base-Daten über mehrere Wochen hinweg.
 
-    // === подтягиваем Target Umsatz для обеих пар ===
-    JoinT = Table.NestedJoin(
-        Sim,
-        {"TargetID", "Aktionshema"},
-        Target_Stage,
-        {"TargetID", "Aktionshema"},
-        "T",
-        JoinKind.LeftOuter
-    ),
-    ExpandT = Table.ExpandTableColumn(
-        JoinT,
-        "T",
-        {"Umsatz_Aktion", "Umsatz_Aktionmehr"},
-        {"Umsatz_Target_Bon", "Umsatz_Target_Rest"}
-    ),
+Technisch ist das aktuell als flexibles Analyse-Tool umgesetzt (kein fixer Lookup), d. h.:
+> Man gibt Artikel-Set + Aktionsthema + Umsatz_Aktion / Umsatz_Aktionmehr vor  
+> → das Tool liefert Bon / Restbon auf Basis vergleichbarer historischer Aktionen.
 
-    // === подтягиваем Base метрики (обе пары) по BaseID + KW + Aktionshema ===
-    JoinB = Table.NestedJoin(
-        ExpandT,
-        {"BaseID", "KW", "Aktionshema"},
-        Base_Stage,
-        {"BaseID", "KW", "Aktionshema"},
-        "B",
-        JoinKind.LeftOuter
-    ),
-    ExpandB = Table.ExpandTableColumn(
-        JoinB,
-        "B",
-        {"Umsatz_Aktion", "Bon_Aktion", "Umsatz_Aktionmehr", "Restbon_Aktionmehr"},
-        {"Umsatz_Base_Bon", "Bon_Base", "Umsatz_Base_Rest", "Restbon_Base"}
-    ),
+Dabei ist mir aufgefallen, dass eine vollständig „fixe“ Tabelle für alle möglichen Artikel-Kombinationen praktisch nicht machbar ist (sehr viele Kombinationen).  
+Stattdessen sehe ich drei sinnvolle Weiterentwicklungsrichtungen und würde gern mit dir abstimmen, welche davon fachlich gewünscht ist:
 
-    // === приведение типов ===
-    Typed = Table.TransformColumns(
-        ExpandB,
-        {
-            {"Umsatz_Target_Bon", each ToNum(_), type nullable number},
-            {"Umsatz_Target_Rest", each ToNum(_), type nullable number},
-            {"Umsatz_Base_Bon", each ToNum(_), type nullable number},
-            {"Bon_Base", each ToNum(_), type nullable number},
-            {"Umsatz_Base_Rest", each ToNum(_), type nullable number},
-            {"Restbon_Base", each ToNum(_), type nullable number}
-        }
-    ),
+1) Das Tool so belassen als allgemeinen Rechner für Bon/Restbon je Set  
+2) Aufbau eines Caches für tatsächlich vorkommende Sets („einmal berechnet → wiederverwendbar“)  
+3) Aufbau eines Basis-Lookups auf Artikelebene (Artikel × Thema), aus dem Set-Werte aggregiert werden
 
-    // === чистим Base: нули/отрицательные убираем (по каждой паре отдельно считаем ratio) ===
-    AddRatios = Table.AddColumn(
-        Typed,
-        "Ratio_Bon",
-        each if [Umsatz_Base_Bon] <> null and [Umsatz_Base_Bon] > 0 and [Bon_Base] <> null and [Bon_Base] > 0
-             then [Bon_Base] / [Umsatz_Base_Bon]
-             else null,
-        type nullable number
-    ),
-    AddRatios2 = Table.AddColumn(
-        AddRatios,
-        "Ratio_Rest",
-        each if [Umsatz_Base_Rest] <> null and [Umsatz_Base_Rest] > 0 and [Restbon_Base] <> null and [Restbon_Base] > 0
-             then [Restbon_Base] / [Umsatz_Base_Rest]
-             else null,
-        type nullable number
-    ),
+Sag mir gern, in welche Richtung du denkst bzw. was für dich das eigentliche Zielbild ist, dann richte ich den nächsten Schritt gezielt darauf aus.
 
-    // === агрегируем по TargetID + Aktionshema ===
-    GroupTarget = Table.Group(
-        AddRatios2,
-        {"TargetID", "Aktionshema"},
-        {
-            {"AvgRatio_Bon", each List.Average(List.RemoveNulls([Ratio_Bon])), type nullable number},
-            {"AvgRatio_Rest", each List.Average(List.RemoveNulls([Ratio_Rest])), type nullable number},
-
-            {"Umsatz_Target_Bon", each List.First(List.RemoveNulls([Umsatz_Target_Bon])), type nullable number},
-            {"Umsatz_Target_Rest", each List.First(List.RemoveNulls([Umsatz_Target_Rest])), type nullable number},
-
-            {"N_BaseRows_Bon", each List.Count(List.RemoveNulls([Ratio_Bon])), Int64.Type},
-            {"N_BaseRows_Rest", each List.Count(List.RemoveNulls([Ratio_Rest])), Int64.Type}
-        }
-    ),
-
-    // === оценки ===
-    AddBonEst = Table.AddColumn(
-        GroupTarget,
-        "Bon_Est",
-        each if [AvgRatio_Bon] = null or [Umsatz_Target_Bon] = null or [Umsatz_Target_Bon] <= 0
-             then null
-             else [AvgRatio_Bon] * [Umsatz_Target_Bon],
-        type nullable number
-    ),
-    AddRestbonEst = Table.AddColumn(
-        AddBonEst,
-        "Restbon_Est",
-        each if [AvgRatio_Rest] = null or [Umsatz_Target_Rest] = null or [Umsatz_Target_Rest] <= 0
-             then null
-             else [AvgRatio_Rest] * [Umsatz_Target_Rest],
-        type nullable number
-    )
-in
-    AddRestbonEst
