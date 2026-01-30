@@ -1,8 +1,8 @@
 =WENNFEHLER(
-  WENN(ISTZAHL(--TEIL(A2;FINDEN("x";A2)-1;1));
-     WENN(UND(FINDEN("x";A2)>2;ISTZAHL(--TEIL(A2;FINDEN("x";A2)-2;1)));
-        --TEIL(A2;FINDEN("x";A2)-2;2);
-        --TEIL(A2;FINDEN("x";A2)-1;1)
+  WENN(ISTZAHL(--TEIL(WECHSELN(A2;" ";"");FINDEN("x";WECHSELN(A2;" ";""))-1;1));
+     WENN(UND(FINDEN("x";WECHSELN(A2;" ";""))>2;ISTZAHL(--TEIL(WECHSELN(A2;" ";"");FINDEN("x";WECHSELN(A2;" ";""))-2;1)));
+        --TEIL(WECHSELN(A2;" ";"");FINDEN("x";WECHSELN(A2;" ";""))-2;2);
+        --TEIL(WECHSELN(A2;" ";"");FINDEN("x";WECHSELN(A2;" ";""))-1;1)
      );
      1
   );
