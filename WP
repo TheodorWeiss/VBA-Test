@@ -1,9 +1,10 @@
 =WENNFEHLER(
-  WENN(ISTZAHL(--TEIL(WECHSELN(A2;" ";"");FINDEN("x";WECHSELN(A2;" ";""))-1;1));
-     WENN(UND(FINDEN("x";WECHSELN(A2;" ";""))>2;ISTZAHL(--TEIL(WECHSELN(A2;" ";"");FINDEN("x";WECHSELN(A2;" ";""))-2;1)));
-        --TEIL(WECHSELN(A2;" ";"");FINDEN("x";WECHSELN(A2;" ";""))-2;2);
-        --TEIL(WECHSELN(A2;" ";"");FINDEN("x";WECHSELN(A2;" ";""))-1;1)
-     );
-     1
+  WENN(
+    UND(
+      AGGREGAT(14;6;WENN((TEIL(WECHSELN(A2;" ";"");ZEILE($1:$200)+1;1)="x")*(ISTZAHL(--TEIL(WECHSELN(A2;" ";"");ZEILE($1:$200);1)));ZEILE($1:$200)+1;1/0);1)>2;
+      ISTZAHL(--TEIL(WECHSELN(A2;" ";"");AGGREGAT(14;6;WENN((TEIL(WECHSELN(A2;" ";"");ZEILE($1:$200)+1;1)="x")*(ISTZAHL(--TEIL(WECHSELN(A2;" ";"");ZEILE($1:$200);1)));ZEILE($1:$200)+1;1/0);1)-2;1))
+    );
+    --TEIL(WECHSELN(A2;" ";"");AGGREGAT(14;6;WENN((TEIL(WECHSELN(A2;" ";"");ZEILE($1:$200)+1;1)="x")*(ISTZAHL(--TEIL(WECHSELN(A2;" ";"");ZEILE($1:$200);1)));ZEILE($1:$200)+1;1/0);1)-2;2);
+    --TEIL(WECHSELN(A2;" ";"");AGGREGAT(14;6;WENN((TEIL(WECHSELN(A2;" ";"");ZEILE($1:$200)+1;1)="x")*(ISTZAHL(--TEIL(WECHSELN(A2;" ";"");ZEILE($1:$200);1)));ZEILE($1:$200)+1;1/0);1)-1;1)
   );
 1)
