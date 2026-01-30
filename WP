@@ -1,12 +1,8 @@
 =WENNFEHLER(
   WENN(ISTZAHL(--TEIL(A2;FINDEN("x";A2)-1;1));
-     --TEIL(
-        LINKS(A2;FINDEN("x";A2)-1);
-        MAX(WENN(
-              ISTZAHL(--TEIL(LINKS(A2;FINDEN("x";A2)-1);ZEILE($1:$10);1))=FALSCH;
-              ZEILE($1:$10)
-        ))+1;
-        10
+     WENN(UND(FINDEN("x";A2)>2;ISTZAHL(--TEIL(A2;FINDEN("x";A2)-2;1)));
+        --TEIL(A2;FINDEN("x";A2)-2;2);
+        --TEIL(A2;FINDEN("x";A2)-1;1)
      );
      1
   );
