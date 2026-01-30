@@ -1,60 +1,13 @@
-(txt as nullable text) as nullable text =>
-let
-    // 0) защита от null
-    t0 = if txt = null then "" else Text.From(txt),
-
-    // 1) режем по вертикальной черте (разделитель теперь "|")
-    segs = Text.Split(t0, "|"),
-
-    // 2) из одного сегмента достаём ПЕРВЫЙ "валидный" номер:
-    //    >=4 цифры, и он должен быть "отделён пробелами" (как было раньше)
-    FirstArtikelInSeg = (seg as text) as nullable text =>
-        let
-            s     = " " & Text.Trim(seg) & " ",     // пробелы по краям — чтобы ловить границы
-            chars = Text.ToList(s),
-
-            st =
-                List.Accumulate(
-                    {0..List.Count(chars)-1},
-                    [cur = "", prev = " ", runPrev = " ", found = null as nullable text],
-                    (state, i) =>
-                        if state[found] <> null then
-                            state
-                        else
-                            let
-                                c = chars{i},
-                                isDigit = c >= "0" and c <= "9",
-
-                                // если цифра и это старт рана — запоминаем символ ДО рана
-                                runPrev2 = if isDigit and state[cur] = "" then state[prev] else state[runPrev],
-                                cur2     = if isDigit then state[cur] & c else state[cur],
-
-                                // если рана закончилась (пошёл не-цифровой символ) — валидируем
-                                found2 =
-                                    if (not isDigit) and state[cur] <> "" and Text.Length(state[cur]) >= 4
-                                       and state[runPrev] = " " and c = " "
-                                    then state[cur]
-                                    else null,
-
-                                // сброс cur после не-цифры
-                                cur3 = if isDigit then cur2 else ""
-                            in
-                                [
-                                    cur = cur3,
-                                    prev = c,
-                                    runPrev = runPrev2,
-                                    found = if found2 <> null then found2 else null
-                                ]
-                ),
-
-            result = st[found]
-        in
-            result,
-
-    perSeg  = List.Transform(segs, each FirstArtikelInSeg(_)),
-    cleaned = List.RemoveNulls(perSeg),
-
-    // 3) итог: номера через ";"
-    out = if List.Count(cleaned) = 0 then null else Text.Combine(cleaned, ";")
-in
-    out
+=WENNFEHLER(
+  WENN(ISTZAHL(--TEIL(A2;FINDEN("x";A2)-1;1));
+     --TEIL(
+        LINKS(A2;FINDEN("x";A2)-1);
+        MAX(WENN(
+              ISTZAHL(--TEIL(LINKS(A2;FINDEN("x";A2)-1);ZEILE($1:$10);1))=FALSCH;
+              ZEILE($1:$10)
+        ))+1;
+        10
+     );
+     1
+  );
+1)
