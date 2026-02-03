@@ -1,15 +1,74 @@
+Ошибка на скрине читается прямо: “Der Schlüssel entsprach keiner Zeile in der Tabelle” — то есть в результате Excel.Workbook(...) нет строки с ключом:
+	•	Item = Werbung
+	•	Kind = Sheet
+
+Значит одно из двух (в 99% случаев):
+	1.	лист называется не ровно Werbung (пробел в конце/в начале, другая раскладка, Werbung , WERBUNG, Werbung (2) и т.д.)
+	2.	это не Sheet, а Table или DefinedName (редко, но бывает, если источник — таблица Excel).
+
+Ты просишь “без сортировки и обработки” — ок. Делаем самый простой M-код:
+	•	берём первый файл из папки (без сортировки)
+	•	выводим список листов, чтобы ты увидел точное имя
+	•	затем подставляем точное имя и грузим данные.
+
+⸻
+
+1) Диагностика: показать, какие листы/таблицы есть в файле
+
+В Advanced Editor вставь вот это (путь свой):
+
 let
     FolderPath = "C:\Users\Weiss\Documents\Wechsler\InboxDrop",
-
     Source = Folder.Files(FolderPath),
-    Sorted = Table.Sort(Source, {{"Date modified", Order.Descending}}),
-    Latest = Table.FirstN(Sorted, 1),
-
-    LatestBinary = Latest{0}[Content],
-    Workbook = Excel.Workbook(LatestBinary, null, true),
-
-    WerbungSheet = Workbook{[Item="Werbung", Kind="Sheet"]}[Data],
-
-    PromotedHeaders = Table.PromoteHeaders(WerbungSheet, [PromoteAllScalars=true])
+    FirstFile = Source{0}[Content],
+    Wb = Excel.Workbook(FirstFile, null, true),
+    Keep = Table.SelectColumns(Wb, {"Name","Item","Kind"})
 in
-    PromotedHeaders
+    Keep
+
+Нажми Done — в окне PQ появится таблица, где будет строка с реальным названием.
+Смотри именно на колонки Item и Kind.
+
+⸻
+
+2) Минимальный код “просто загрузить Werbung”
+
+После того как увидишь точное значение (например Werbung  или WERBUNG), вставь второй код и подставь:
+
+let
+    FolderPath = "C:\Users\Weiss\Documents\Wechsler\InboxDrop",
+    Source = Folder.Files(FolderPath),
+    FirstFile = Source{0}[Content],
+    Wb = Excel.Workbook(FirstFile, null, true),
+    Werbung = Wb{[Item="Werbung", Kind="Sheet"]}[Data]
+in
+    Werbung
+
+⚠️ Если в диагностике Kind будет “Table”, тогда нужно:
+
+Werbung = Wb{[Item="Werbung", Kind="Table"]}[Data]
+
+
+⸻
+
+3) Если хочешь “вообще без риска”, подцепиться к первому Sheet
+
+Это вариант “мне всё равно имя, просто дай данные”, вообще без ключей:
+
+let
+    FolderPath = "C:\Users\Weiss\Documents\Wechsler\InboxDrop",
+    Source = Folder.Files(FolderPath),
+    FirstFile = Source{0}[Content],
+    Wb = Excel.Workbook(FirstFile, null, true),
+    FirstSheet = Table.SelectRows(Wb, each [Kind] = "Sheet"){0}[Data]
+in
+    FirstSheet
+
+
+⸻
+
+Почему я не могу “сразу сказать правильное имя”
+
+Потому что Power Query требует точного совпадения Item и Kind, а сейчас в файле это не совпадает с Werbung/Sheet. Табличка из шага (1) покажет точное значение за 5 секунд.
+
+Сделай шаг 1, пришли (или просто напиши) что там в строке для нужного листа: Item=..., Kind=... — и я дам финальный M-код уже “в одну строку” без диагностики.
