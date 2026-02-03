@@ -1,10 +1,34 @@
-=WENNFEHLER(
-  WENN(
-    UND(
-      AGGREGAT(14;6;WENN((TEIL(WECHSELN(A2;" ";"");ZEILE($1:$200)+1;1)="x")*(ISTZAHL(--TEIL(WECHSELN(A2;" ";"");ZEILE($1:$200);1)));ZEILE($1:$200)+1;1/0);1)>2;
-      ISTZAHL(--TEIL(WECHSELN(A2;" ";"");AGGREGAT(14;6;WENN((TEIL(WECHSELN(A2;" ";"");ZEILE($1:$200)+1;1)="x")*(ISTZAHL(--TEIL(WECHSELN(A2;" ";"");ZEILE($1:$200);1)));ZEILE($1:$200)+1;1/0);1)-2;1))
-    );
-    --TEIL(WECHSELN(A2;" ";"");AGGREGAT(14;6;WENN((TEIL(WECHSELN(A2;" ";"");ZEILE($1:$200)+1;1)="x")*(ISTZAHL(--TEIL(WECHSELN(A2;" ";"");ZEILE($1:$200);1)));ZEILE($1:$200)+1;1/0);1)-2;2);
-    --TEIL(WECHSELN(A2;" ";"");AGGREGAT(14;6;WENN((TEIL(WECHSELN(A2;" ";"");ZEILE($1:$200)+1;1)="x")*(ISTZAHL(--TEIL(WECHSELN(A2;" ";"");ZEILE($1:$200);1)));ZEILE($1:$200)+1;1/0);1)-1;1)
-  );
-1)
+IT: Guten Morgen, danke für den Termin. Ich wollte kurz über den Query von letzter Woche sprechen, der relativ viel Last erzeugt hat.
+
+Du: Guten Morgen. Ja, das habe ich verstanden. Das war tatsächlich eine einmalige Analyse, ich habe die Daten wochenweise gezogen.
+
+IT: Okay. Wichtig ist uns vor allem, dass solche Abfragen nicht regelmäßig laufen.
+
+Du: Absolut, das sehe ich genauso. Mir ist auch wichtig, künftig systemschonender zu arbeiten.
+
+IT: Wie sah der Query denn konkret aus?
+
+Du: Es war eine Wochenaggregation mit Zeitraum- und Kategorienfiltern, keine Einzelbons oder Detaildaten.
+
+IT: Verstanden.
+
+Du: In dem Zusammenhang hätte ich eine grundsätzliche Frage.
+Aktuell kombiniere ich Daten aus dem Cube mit NMDAX und WDB manuell in Excel.
+Gibt es eine Möglichkeit, diese Quellen technisch sauber zu verbinden?
+
+IT: Direkt im Cube ist das so nicht vorgesehen.
+
+Du: Okay, verstehe.
+Gibt es aus IT-Sicht einen empfohlenen Weg, wie man solche Use Cases abbilden sollte?
+Mir ist die konkrete Lösung offen – wichtig wäre nur, dass ich am Ende in Excel damit arbeiten kann.
+
+IT: Eventuell über einen vorgelagerten View oder einen separaten Datenlayer.
+
+Du: Das klingt sinnvoll. Wäre das etwas, das wir uns bei Bedarf gemeinsam anschauen könnten?
+
+IT: Ja, grundsätzlich schon.
+
+Du: Super, das hilft mir sehr. Dann weiß ich, wie ich künftig effizienter und systemschonender vorgehe.
+Vielen Dank für die Zeit und die Hinweise.
+
+IT: Gerne. Wenn noch Fragen auftauchen, melden Sie sich einfach.
