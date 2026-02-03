@@ -1,56 +1,52 @@
-Ок, понял: имя файла оставляем как во вложении, сохраняем в одну фиксированную папку, и если такой файл уже есть — перезаписываем. Потом обновляем Power Query, который читает эту папку (и берёт нужный файл).
-
-Ниже: (1) макрос, (2) куда нажимать, (3) как настроить PQ.
-
-⸻
-
-1) Макрос: взять последнее письмо → сохранить вложения (с их именами) с overwrite → Refresh PQ
-
-Вставь в Excel VBA (Alt+F11 → Insert → Module):
-
 Option Explicit
 
-Public Sub Wechsler_SaveLatestMailAttachments_Overwrite_RefreshPQ()
-    ' === НАСТРОЙКИ ===
+Public Sub Wechsler_PullLatest_Attachments_Overwrite_RefreshPQ()
+    ' ===== SETTINGS =====
     Dim subjectPhrase As String
-    subjectPhrase = "Wechsler KW"          ' фраза в теме письма
+    subjectPhrase = "Wechsler KW"          ' Phrase to search in email subject
 
+    ' Choose a stable folder where you have write permissions.
+    ' Recommended: user profile, not C:\ root.
     Dim targetFolder As String
-    targetFolder = "C:\Wechsler\InboxDrop" ' папка для сохранения (создастся, если нет)
-    ' можешь поставить H:\..., если уверен что есть права и диск всегда доступен
+    targetFolder = Environ$("USERPROFILE") & "\Documents\Wechsler\InboxDrop"
+    ' If you insist on H:\, make sure H: is mapped and you have permissions:
+    ' targetFolder = "H:\Wechsler\InboxDrop"
 
+    ' If empty -> refresh all queries/connections in this workbook.
+    ' Otherwise specify a particular query name (as shown in Queries & Connections).
     Dim pqQueryName As String
-    pqQueryName = ""  ' "" = обновить ВСЁ. Или имя конкретного PQ-запроса, если хочешь.
+    pqQueryName = ""
 
-    ' === 1) найти самое свежее письмо ===
+    ' ===== 1) Find the latest email =====
     Dim mail As Object
     Set mail = GetLatestMailBySubjectPhrase(subjectPhrase)
 
     If mail Is Nothing Then
-        MsgBox "Не найдено письмо с фразой в теме: " & subjectPhrase, vbExclamation
+        MsgBox "No email found with subject containing: " & subjectPhrase, vbExclamation
         Exit Sub
     End If
 
     Debug.Print "FOUND: " & mail.ReceivedTime & " | " & mail.Subject
 
-    ' === 2) сохранить все вложения с их именами, overwrite если уже есть ===
-    EnsureFolderExists targetFolder
+    ' ===== 2) Ensure folder exists (recursive) =====
+    EnsureFolderExistsRecursive targetFolder
+    Debug.Print "TARGET FOLDER: " & targetFolder
 
+    ' ===== 3) Save attachments using their original names (overwrite if exists) =====
     Dim savedCount As Long
     savedCount = SaveAllAttachments_Overwrite(mail, targetFolder)
 
     Debug.Print "Saved files: " & savedCount
-    Debug.Print "Folder: " & targetFolder
 
-    ' === 3) обновить Power Query ===
+    ' ===== 4) Refresh Power Query =====
     RefreshPowerQuery pqQueryName
 
-    MsgBox "Готово: сохранено вложений = " & savedCount & vbCrLf & _
-           "Папка: " & targetFolder, vbInformation
+    MsgBox "Done. Saved attachments: " & savedCount & vbCrLf & _
+           "Folder: " & targetFolder, vbInformation
 End Sub
 
 
-' --- Находит самое новое письмо в Inbox, где Subject содержит фразу ---
+' --- Finds the newest email in Inbox whose Subject contains the given phrase ---
 Private Function GetLatestMailBySubjectPhrase(ByVal subjectPhrase As String) As Object
     Dim olApp As Object, ns As Object, inbox As Object, items As Object
     Set olApp = CreateObject("Outlook.Application")
@@ -58,7 +54,7 @@ Private Function GetLatestMailBySubjectPhrase(ByVal subjectPhrase As String) As 
     Set inbox = ns.GetDefaultFolder(6) ' 6 = Inbox
     Set items = inbox.Items
 
-    items.Sort "[ReceivedTime]", True ' новые сверху
+    items.Sort "[ReceivedTime]", True ' newest first
 
     Dim i As Long
     For i = 1 To items.Count
@@ -76,11 +72,11 @@ Private Function GetLatestMailBySubjectPhrase(ByVal subjectPhrase As String) As 
 End Function
 
 
-' --- Сохраняет ВСЕ вложения письма в folder, имя как у вложения.
-'     Если файл уже есть -> удаляем и сохраняем заново (overwrite).
+' --- Saves ALL attachments into folderPath using original filenames.
+'     If the file already exists -> delete it first (true overwrite).
 Private Function SaveAllAttachments_Overwrite(ByVal mail As Object, ByVal folderPath As String) As Long
-    Dim att As Object
-    Dim cnt As Long: cnt = 0
+    Dim att As Object, cnt As Long
+    cnt = 0
 
     If mail.Attachments.Count = 0 Then
         SaveAllAttachments_Overwrite = 0
@@ -92,27 +88,50 @@ Private Function SaveAllAttachments_Overwrite(ByVal mail As Object, ByVal folder
         fileName = CleanFileName(CStr(att.FileName))
         fullPath = folderPath & "\" & fileName
 
+        ' Overwrite behavior: delete old file if present
         If Dir(fullPath) <> vbNullString Then
-            Kill fullPath   ' overwrite: удаляем старый
+            Kill fullPath
         End If
 
         att.SaveAsFile fullPath
         cnt = cnt + 1
+
+        Debug.Print "Saved: " & fullPath
     Next att
 
     SaveAllAttachments_Overwrite = cnt
 End Function
 
 
-Private Sub EnsureFolderExists(ByVal folderPath As String)
-    If Dir(folderPath, vbDirectory) = vbNullString Then
-        MkDir folderPath
+' --- Creates a full folder path recursively (MkDir cannot create nested folders in one call) ---
+Private Sub EnsureFolderExistsRecursive(ByVal folderPath As String)
+    On Error GoTo EH
+
+    If Len(folderPath) = 0 Then Exit Sub
+    If Dir(folderPath, vbDirectory) <> vbNullString Then Exit Sub
+
+    Dim parentPath As String
+    parentPath = Left$(folderPath, InStrRev(folderPath, "\") - 1)
+
+    ' Create parent first
+    If Len(parentPath) > 0 And Dir(parentPath, vbDirectory) = vbNullString Then
+        EnsureFolderExistsRecursive parentPath
     End If
+
+    ' Now create this folder
+    MkDir folderPath
+    Exit Sub
+
+EH:
+    ' Provide a clear error message with the failing path
+    MsgBox "Failed to create folder:" & vbCrLf & folderPath & vbCrLf & _
+           "Error " & Err.Number & ": " & Err.Description, vbCritical
+    Err.Clear
 End Sub
 
 
+' --- Replaces characters that are invalid in Windows filenames ---
 Private Function CleanFileName(ByVal s As String) As String
-    ' На случай, если во вложении странные символы
     Dim bad As Variant, ch As Variant
     bad = Array("\", "/", ":", "*", "?", """", "<", ">", "|")
     For Each ch In bad
@@ -122,7 +141,7 @@ Private Function CleanFileName(ByVal s As String) As String
 End Function
 
 
-' --- Обновление PQ: либо конкретного запроса, либо всего ---
+' --- Refreshes Power Query: either a specific query or the whole workbook ---
 Private Sub RefreshPowerQuery(ByVal pqQueryName As String)
     If Len(Trim$(pqQueryName)) = 0 Then
         ThisWorkbook.RefreshAll
@@ -136,54 +155,3 @@ Private Sub RefreshPowerQuery(ByVal pqQueryName As String)
 fallback:
     ThisWorkbook.RefreshAll
 End Sub
-
-
-⸻
-
-2) Куда нажимать, чтобы макрос работал
-
-Шаги один раз:
-	1.	В Excel нажми Alt + F11
-	2.	Insert → Module
-	3.	Вставь код → Ctrl + S (сохрани xlsm)
-
-Запуск:
-	4.	В VBA выбери курсором Wechsler_SaveLatestMailAttachments_Overwrite_RefreshPQ
-	5.	Нажми F5 (Run)
-
-Если Excel спросит про безопасность макросов — нужно разрешить.
-
-⸻
-
-3) Настроить Power Query, чтобы он “подхватывал” этот файл автоматически
-
-Вариант “правильный”: PQ читает папку C:\Wechsler\InboxDrop
-	1.	Excel → Data → Get Data → From File → From Folder
-	2.	Выбери: C:\Wechsler\InboxDrop
-	3.	Нажми Transform Data
-	4.	Дальше есть 2 логики (выбирай, что нужно):
-
-A) “Всегда брать самый новый файл”
-	•	В PQ: отсортируй по Date modified по убыванию
-	•	Оставь первую строку
-	•	Дальше “Combine” / “Binary to Table” в зависимости от типа файла
-
-B) “Брать файл с конкретным именем”
-	•	В PQ: фильтр по колонке Name = нужное имя (например Wechsler_KW09.xlsx)
-	•	Это работает, если имя стабильно/предсказуемо. Если меняется по неделям — лучше вариант A.
-
-⸻
-
-Почему это сейчас будет работать “в связке”
-	•	Макрос каждый раз кладёт вложение в одну и ту же папку и перезаписывает файл с таким же именем.
-	•	PQ берёт данные из этой папки.
-	•	Макрос делает RefreshAll → PQ обновляется.
-
-⸻
-
-Мини-важное уточнение (без вопросов, просто чтобы не словить баг)
-
-Если письмо содержит несколько вложений, мой код сохранит все и перезапишет по именам.
-Если тебе нужно сохранять только одно (например только .xlsx, или только то, где имя содержит WDB), скажи — добавлю 2 строки фильтра (это реально 30 секунд правки).
-
-Хочешь, чтобы после RefreshAll макрос ждал окончания обновления (а не просто запускал)? Могу добавить “wait until refresh finished”, если у тебя дальше в пайплайне идут последующие шаги.
