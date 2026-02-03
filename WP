@@ -1,113 +1,45 @@
-Понял. Я сам к твоей почте доступ получить не могу, но могу дать точный “первый шаг” пайплайна: как автоматически взять самое свежее письмо, где в теме есть заданная фраза, и дальше уже либо сохранить вложение/тело письма, либо передать в Excel/Power Query.
-
-Ниже — 3 рабочих варианта (от самого быстрого к самому “пайплайн-правильному”).
-
-⸻
-
-Вариант A (самый практичный для “первого шага”): Outlook VBA → вернуть письмо/сохранить вложение
-
-1) Макрос: найти последнее по дате письмо в Inbox, где Subject содержит фразу
-	•	Ищет в Входящих (Inbox)
-	•	Сортирует по ReceivedTime по убыванию
-	•	Берёт первое совпадение (то есть самое свежее)
-
-Открой Outlook → Alt+F11 → Insert → Module → вставь код → запусти GetLatestMailBySubjectPhrase
-
 Option Explicit
 
-Public Sub GetLatestMailBySubjectPhrase()
+Public Sub GetLatestMailAndSaveAttachments()
     Dim subjectPhrase As String
-    subjectPhrase = "НУЖНАЯ ФРАЗА"  ' <-- замени
+    subjectPhrase = "Wechsler KW"   ' <-- фраза в теме
 
-    Dim ns As Outlook.NameSpace
-    Set ns = Application.GetNamespace("MAPI")
+    Dim targetFolder As String
+    targetFolder = "H:\Wechsler\InboxDrop"  ' <-- папка для вложений (создай заранее)
 
-    Dim inbox As Outlook.Folder
-    Set inbox = ns.GetDefaultFolder(olFolderInbox)
+    Dim olApp As Object, ns As Object, inbox As Object, items As Object
+    Set olApp = CreateObject("Outlook.Application")
+    Set ns = olApp.GetNamespace("MAPI")
 
-    Dim items As Outlook.Items
+    ' 6 = olFolderInbox
+    Set inbox = ns.GetDefaultFolder(6)
     Set items = inbox.Items
 
-    ' Важно: сортировка по дате получения (сначала новые)
-    items.Sort "[ReceivedTime]", True
+    items.Sort "[ReceivedTime]", True  ' новые сверху
 
     Dim i As Long
     For i = 1 To items.Count
         If TypeName(items(i)) = "MailItem" Then
-            Dim mail As Outlook.MailItem
+            Dim mail As Object
             Set mail = items(i)
 
             If InStr(1, mail.Subject, subjectPhrase, vbTextCompare) > 0 Then
                 Debug.Print "FOUND:"
                 Debug.Print "Received: " & mail.ReceivedTime
                 Debug.Print "Subject:  " & mail.Subject
-                Debug.Print "Sender:   " & mail.SenderEmailAddress
-                Debug.Print "EntryID:  " & mail.EntryID
-                mail.Display
+
+                SaveAttachments_Late mail, targetFolder
                 Exit Sub
             End If
         End If
     Next i
 
-    MsgBox "Письмо с фразой в теме не найдено: " & subjectPhrase, vbExclamation
+    MsgBox "Не найдено письмо с фразой в теме: " & subjectPhrase, vbExclamation
 End Sub
 
-2) Если пайплайну нужно “забрать файл” из письма (например, Excel/CSV)
-
-Добавь сохранение последнего вложения (или всех вложений) в папку:
-
-Private Sub SaveAttachments(mail As Outlook.MailItem, targetFolder As String)
-    Dim att As Outlook.Attachment
+Private Sub SaveAttachments_Late(ByVal mail As Object, ByVal targetFolder As String)
+    Dim att As Object
     For Each att In mail.Attachments
         att.SaveAsFile targetFolder & "\" & att.FileName
     Next att
 End Sub
-
-И вызови после нахождения письма:
-
-Call SaveAttachments(mail, "C:\Temp\Wechsler\InboxDrop")
-
-
-⸻
-
-Вариант B (Excel Power Query “как пайплайн”): через Microsoft Graph / Exchange (правильнее, но тяжелее)
-
-Если цель — чтобы Power Query сам тянул письма, то это почти всегда означает:
-	•	либо Microsoft Graph API (OAuth),
-	•	либо Exchange Web Services (часто уже “legacy”),
-	•	либо Power Automate как прокладка.
-
-Чисто PQ “из Outlook письма” без прокладок обычно упирается в авторизацию и нестабильность.
-
-Идея пайплайна (надёжная):
-	1.	Power Automate: When a new email arrives (или по расписанию)
-	2.	Фильтр по теме (contains phrase)
-	3.	Берём самое новое (top 1 по receivedDateTime)
-	4.	Сохраняем вложение в OneDrive/SharePoint/файловую шару
-	5.	Power Query читает файл из папки → дальше твой Wechsler 2.0
-
-⸻
-
-Вариант C (самый простой “без кода”): Outlook поиск + правило
-
-Если тебе нужно просто быстро “зафиксировать процесс”:
-	•	В Outlook в Inbox: в поиске subject:"НУЖНАЯ ФРАЗА"
-	•	Сортировка по “Получено” (новые сверху)
-	•	Верхнее письмо — нужное
-
-Но это не пайплайн, а ручной шаг.
-
-⸻
-
-Что я бы выбрала как “первый шаг” для Wechsler 2.0
-
-Если ты хочешь реально пайплайн, но без боли с OAuth:
-VBA (или Power Automate) → сохранение вложения в папку → дальше PQ читает папку.
-
-⸻
-
-Если скажешь, у тебя почта в Outlook (M365/Exchange) или Gmail, и где именно искать (Inbox или ещё подпапка, Shared mailbox, “Отчёты” и т.п.) — я дам готовый “боевой” кусок под твой кейс:
-	•	поиск в конкретной папке/нескольких папках
-	•	учёт писем с одинаковой темой
-	•	выбор конкретного вложения по имени (например, содержит NMDAX/WDB)
-	•	сохранение с “правильным” именем в формате YYYY-MM-DD_HHMM_filename.ext для стабильного ingestion в PQ.
