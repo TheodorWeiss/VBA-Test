@@ -2,20 +2,19 @@ Option Explicit
 
 Public Sub GetLatestMailAndSaveAttachments()
     Dim subjectPhrase As String
-    subjectPhrase = "Wechsler KW"   ' <-- фраза в теме
+    subjectPhrase = "Wechsler KW"  ' <-- фраза в теме
 
     Dim targetFolder As String
-    targetFolder = "H:\Wechsler\InboxDrop"  ' <-- папка для вложений (создай заранее)
+    targetFolder = Environ$("TEMP") & "\WechslerInboxDrop"
+    EnsureFolder targetFolder
 
     Dim olApp As Object, ns As Object, inbox As Object, items As Object
     Set olApp = CreateObject("Outlook.Application")
     Set ns = olApp.GetNamespace("MAPI")
-
-    ' 6 = olFolderInbox
-    Set inbox = ns.GetDefaultFolder(6)
+    Set inbox = ns.GetDefaultFolder(6) ' Inbox
     Set items = inbox.Items
 
-    items.Sort "[ReceivedTime]", True  ' новые сверху
+    items.Sort "[ReceivedTime]", True
 
     Dim i As Long
     For i = 1 To items.Count
@@ -28,7 +27,10 @@ Public Sub GetLatestMailAndSaveAttachments()
                 Debug.Print "Received: " & mail.ReceivedTime
                 Debug.Print "Subject:  " & mail.Subject
 
-                SaveAttachments_Late mail, targetFolder
+                Dim savedPaths As Collection
+                Set savedPaths = SaveAttachments_Safe(mail, targetFolder)
+
+                Debug.Print "Saved files: " & savedPaths.Count
                 Exit Sub
             End If
         End If
@@ -37,9 +39,62 @@ Public Sub GetLatestMailAndSaveAttachments()
     MsgBox "Не найдено письмо с фразой в теме: " & subjectPhrase, vbExclamation
 End Sub
 
-Private Sub SaveAttachments_Late(ByVal mail As Object, ByVal targetFolder As String)
+Private Function SaveAttachments_Safe(ByVal mail As Object, ByVal targetFolder As String) As Collection
+    Dim result As New Collection
     Dim att As Object
+
     For Each att In mail.Attachments
-        att.SaveAsFile targetFolder & "\" & att.FileName
+        Dim safeName As String, fullPath As String
+        safeName = CleanFileName(CStr(att.FileName))
+        fullPath = UniquePath(targetFolder & "\" & safeName)
+
+        att.SaveAsFile fullPath
+        result.Add fullPath
     Next att
+
+    Set SaveAttachments_Safe = result
+End Function
+
+Private Sub EnsureFolder(ByVal folderPath As String)
+    If Dir(folderPath, vbDirectory) = vbNullString Then
+        MkDir folderPath
+    End If
 End Sub
+
+Private Function CleanFileName(ByVal s As String) As String
+    Dim bad As Variant, ch As Variant
+    bad = Array("\", "/", ":", "*", "?", """", "<", ">", "|")
+    For Each ch In bad
+        s = Replace(s, ch, "_")
+    Next ch
+    CleanFileName = s
+End Function
+
+Private Function UniquePath(ByVal fullPath As String) As String
+    If Dir(fullPath) = vbNullString Then
+        UniquePath = fullPath
+        Exit Function
+    End If
+
+    Dim base As String, ext As String, p As Long
+    p = InStrRev(fullPath, ".")
+    If p > 0 Then
+        base = Left$(fullPath, p - 1)
+        ext = Mid$(fullPath, p)
+    Else
+        base = fullPath
+        ext = ""
+    End If
+
+    Dim k As Long
+    For k = 1 To 999
+        Dim candidate As String
+        candidate = base & "_" & Format$(k, "000") & ext
+        If Dir(candidate) = vbNullString Then
+            UniquePath = candidate
+            Exit Function
+        End If
+    Next k
+
+    UniquePath = base & "_" & Format$(CLng(Timer), "000000") & ext
+End Function
