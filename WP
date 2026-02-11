@@ -1,16 +1,185 @@
-=GLÄTTEN(
-TEXTVERKETTEN("";WAHR;
-WENN(ZEILE(INDIREKT("1:"&LÄNGE(A2)))=1;
-TEIL(A2;1;1);
-WENN(UND(
-CODE(TEIL(A2;ZEILE(INDIREKT("1:"&LÄNGE(A2)));1))>=65;
-CODE(TEIL(A2;ZEILE(INDIREKT("1:"&LÄNGE(A2)));1))<=90;
-CODE(TEIL(A2;ZEILE(INDIREKT("1:"&LÄNGE(A2)))-1;1))>=97;
-CODE(TEIL(A2;ZEILE(INDIREKT("1:"&LÄNGE(A2)))-1;1))<=122
-);
-" "&TEIL(A2;ZEILE(INDIREKT("1:"&LÄNGE(A2)));1);
-TEIL(A2;ZEILE(INDIREKT("1:"&LÄNGE(A2)));1)
-)
-)
-)
-)
+Option Explicit
+
+' === ПУБЛИЧНАЯ ФУНКЦИЯ ДЛЯ EXCEL ===
+' Делает:
+' 1) удаляет цифры
+' 2) заменяет типичные разделители на пробел
+' 3) вставляет пробел перед заглавной буквой ТОЛЬКО если перед ней стоит строчная вплотную
+' 4) чистит прочие спецсимволы (оставляет буквы + пробел)
+' 5) схлопывает повторные пробелы, trim
+Public Function CleanProductName(ByVal s As String) As String
+    If Len(s) = 0 Then
+        CleanProductName = ""
+        Exit Function
+    End If
+
+    Dim t As String
+    t = s
+
+    ' 0) Если у тебя номер артикула "123 - Name", можно отрезать всё до " - "
+    t = CutAfterDash(t)
+
+    ' 1) Типичные разделители -> пробел
+    t = ReplaceDelimsWithSpace(t)
+
+    ' 2) Удаляем цифры
+    t = RemoveDigits(t)
+
+    ' 3) Вставляем пробел в CamelCase: aB -> a B (только если перед заглавной стоит строчная)
+    t = InsertSpaceBeforeUpperIfPrevLower(t)
+
+    ' 4) Оставляем только буквы (латиница + немецкие ÄÖÜäöü + ß) и пробел
+    t = KeepLettersAndSpaces(t)
+
+    ' 5) Lowercase + нормализация пробелов
+    t = LCase$(t)
+    t = NormalizeSpaces(t)
+
+    CleanProductName = t
+End Function
+
+
+' === ВСПОМОГАТЕЛЬНЫЕ ===
+
+Private Function CutAfterDash(ByVal s As String) As String
+    ' Режем по " - " если есть, иначе возвращаем как есть
+    Dim p As Long
+    p = InStr(1, s, " - ", vbBinaryCompare)
+    If p > 0 Then
+        CutAfterDash = Mid$(s, p + 3)
+    Else
+        CutAfterDash = s
+    End If
+End Function
+
+Private Function ReplaceDelimsWithSpace(ByVal s As String) As String
+    Dim t As String
+    t = s
+
+    ' Можно расширять список при необходимости
+    t = Replace(t, ".", " ")
+    t = Replace(t, ",", " ")
+    t = Replace(t, ";", " ")
+    t = Replace(t, ":", " ")
+    t = Replace(t, "/", " ")
+    t = Replace(t, "\", " ")
+    t = Replace(t, "&", " ")
+    t = Replace(t, "+", " ")
+    t = Replace(t, "_", " ")
+    t = Replace(t, "-", " ")
+    t = Replace(t, "(", " ")
+    t = Replace(t, ")", " ")
+    t = Replace(t, "[", " ")
+    t = Replace(t, "]", " ")
+    t = Replace(t, "{", " ")
+    t = Replace(t, "}", " ")
+    t = Replace(t, """", " ")
+    t = Replace(t, "'", " ")
+
+    ReplaceDelimsWithSpace = t
+End Function
+
+Private Function RemoveDigits(ByVal s As String) As String
+    Dim i As Long, ch As String, out As String
+    out = ""
+    For i = 1 To Len(s)
+        ch = Mid$(s, i, 1)
+        If Not (ch Like "#") Then out = out & ch
+    Next i
+    RemoveDigits = out
+End Function
+
+Private Function InsertSpaceBeforeUpperIfPrevLower(ByVal s As String) As String
+    Dim i As Long
+    Dim prevCh As String, ch As String
+    Dim out As String
+
+    If Len(s) = 0 Then
+        InsertSpaceBeforeUpperIfPrevLower = ""
+        Exit Function
+    End If
+
+    out = Mid$(s, 1, 1)
+    For i = 2 To Len(s)
+        prevCh = Mid$(s, i - 1, 1)
+        ch = Mid$(s, i, 1)
+
+        If IsLowerLetter(prevCh) And IsUpperLetter(ch) Then
+            out = out & " " & ch
+        Else
+            out = out & ch
+        End If
+    Next i
+
+    InsertSpaceBeforeUpperIfPrevLower = out
+End Function
+
+Private Function KeepLettersAndSpaces(ByVal s As String) As String
+    Dim i As Long, ch As String
+    Dim out As String
+    out = ""
+
+    For i = 1 To Len(s)
+        ch = Mid$(s, i, 1)
+
+        If ch = " " Then
+            out = out & ch
+        ElseIf IsAnyLetter(ch) Then
+            out = out & ch
+        Else
+            ' всё остальное выкидываем
+        End If
+    Next i
+
+    KeepLettersAndSpaces = out
+End Function
+
+Private Function NormalizeSpaces(ByVal s As String) As String
+    Dim t As String
+    t = Trim$(s)
+    Do While InStr(1, t, "  ", vbBinaryCompare) > 0
+        t = Replace(t, "  ", " ")
+    Loop
+    NormalizeSpaces = t
+End Function
+
+Private Function IsAnyLetter(ByVal ch As String) As Boolean
+    ' латиница + немецкие
+    Dim u As Long
+    u = AscW(ch)
+
+    ' A-Z
+    If u >= 65 And u <= 90 Then IsAnyLetter = True: Exit Function
+    ' a-z
+    If u >= 97 And u <= 122 Then IsAnyLetter = True: Exit Function
+
+    ' ÄÖÜäöüß
+    If ch = "Ä" Or ch = "Ö" Or ch = "Ü" _
+       Or ch = "ä" Or ch = "ö" Or ch = "ü" _
+       Or ch = "ß" Then
+        IsAnyLetter = True
+        Exit Function
+    End If
+
+    IsAnyLetter = False
+End Function
+
+Private Function IsLowerLetter(ByVal ch As String) As Boolean
+    Dim u As Long
+    u = AscW(ch)
+
+    If u >= 97 And u <= 122 Then IsLowerLetter = True: Exit Function
+    If ch = "ä" Or ch = "ö" Or ch = "ü" Or ch = "ß" Then IsLowerLetter = True: Exit Function
+
+    IsLowerLetter = False
+End Function
+
+Private Function IsUpperLetter(ByVal ch As String) As Boolean
+    Dim u As Long
+    u = AscW(ch)
+
+    If u >= 65 And u <= 90 Then IsUpperLetter = True: Exit Function
+    If ch = "Ä" Or ch = "Ö" Or ch = "Ü" Then IsUpperLetter = True: Exit Function
+
+    IsUpperLetter = False
+End Function
