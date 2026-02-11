@@ -1,185 +1,105 @@
-Option Explicit
+Да, по логике после очистки должно получаться mw x l (или минимум mw x), а не mwx.
 
-' === ПУБЛИЧНАЯ ФУНКЦИЯ ДЛЯ EXCEL ===
-' Делает:
-' 1) удаляет цифры
-' 2) заменяет типичные разделители на пробел
-' 3) вставляет пробел перед заглавной буквой ТОЛЬКО если перед ней стоит строчная вплотную
-' 4) чистит прочие спецсимволы (оставляет буквы + пробел)
-' 5) схлопывает повторные пробелы, trim
-Public Function CleanProductName(ByVal s As String) As String
-    If Len(s) = 0 Then
-        CleanProductName = ""
-        Exit Function
-    End If
+Разберём твой кейс MW20x0,5l по шагам внутри нашей текущей логики:
+	1.	Исходник: MW20x0,5l
+	2.	Замены разделителей: запятая , → пробел → MW20x0 5l
+	3.	Удаление цифр → MWx l
+	4.	Правило “две заглавные + строчная” должно вставить пробел: MW x l
+	5.	Lowercase → mw x l
 
-    Dim t As String
-    t = s
+То есть если у тебя в итоге выходит mwx, значит происходит одно из двух:
 
-    ' 0) Если у тебя номер артикула "123 - Name", можно отрезать всё до " - "
-    t = CutAfterDash(t)
+⸻
 
-    ' 1) Типичные разделители -> пробел
-    t = ReplaceDelimsWithSpace(t)
+Причина A (самая вероятная): ты ещё не обновил функцию на “умную” версию
 
-    ' 2) Удаляем цифры
-    t = RemoveDigits(t)
+Старая функция вставляла пробел только для aB, но не для MWx — поэтому и получалось mwx.
 
-    ' 3) Вставляем пробел в CamelCase: aB -> a B (только если перед заглавной стоит строчная)
-    t = InsertSpaceBeforeUpperIfPrevLower(t)
+✅ Решение: убедись, что у тебя в коде реально вызывается новая функция InsertSpacesSmart, а не старая.
 
-    ' 4) Оставляем только буквы (латиница + немецкие ÄÖÜäöü + ß) и пробел
-    t = KeepLettersAndSpaces(t)
+Должно быть так в CleanProductName:
 
-    ' 5) Lowercase + нормализация пробелов
-    t = LCase$(t)
-    t = NormalizeSpaces(t)
+t = InsertSpacesSmart(t)
 
-    CleanProductName = t
-End Function
+А не:
+
+t = InsertSpaceBeforeUpperIfPrevLower(t)
 
 
-' === ВСПОМОГАТЕЛЬНЫЕ ===
+⸻
 
-Private Function CutAfterDash(ByVal s As String) As String
-    ' Режем по " - " если есть, иначе возвращаем как есть
-    Dim p As Long
-    p = InStr(1, s, " - ", vbBinaryCompare)
-    If p > 0 Then
-        CutAfterDash = Mid$(s, p + 3)
-    Else
-        CutAfterDash = s
-    End If
-End Function
+Причина B: пробел где-то “вылетает” на шаге фильтрации символов
 
-Private Function ReplaceDelimsWithSpace(ByVal s As String) As String
-    Dim t As String
-    t = s
+Если ты используешь старую KeepLettersAndSpaces, она оставляет только обычный пробел Chr(32).
+Но тут мы пробел вставляем сами (обычный), так что при правильной версии кода он не должен исчезать.
 
-    ' Можно расширять список при необходимости
-    t = Replace(t, ".", " ")
-    t = Replace(t, ",", " ")
-    t = Replace(t, ";", " ")
-    t = Replace(t, ":", " ")
-    t = Replace(t, "/", " ")
-    t = Replace(t, "\", " ")
-    t = Replace(t, "&", " ")
-    t = Replace(t, "+", " ")
-    t = Replace(t, "_", " ")
-    t = Replace(t, "-", " ")
-    t = Replace(t, "(", " ")
-    t = Replace(t, ")", " ")
-    t = Replace(t, "[", " ")
-    t = Replace(t, "]", " ")
-    t = Replace(t, "{", " ")
-    t = Replace(t, "}", " ")
-    t = Replace(t, """", " ")
-    t = Replace(t, "'", " ")
+⸻
 
-    ReplaceDelimsWithSpace = t
-End Function
+✅ Точный фикс: вставь/замени эти куски
 
-Private Function RemoveDigits(ByVal s As String) As String
-    Dim i As Long, ch As String, out As String
-    out = ""
-    For i = 1 To Len(s)
-        ch = Mid$(s, i, 1)
-        If Not (ch Like "#") Then out = out & ch
-    Next i
-    RemoveDigits = out
-End Function
+1) Вставь новую функцию (или замени старую)
 
-Private Function InsertSpaceBeforeUpperIfPrevLower(ByVal s As String) As String
+Private Function InsertSpacesSmart(ByVal s As String) As String
     Dim i As Long
-    Dim prevCh As String, ch As String
+    Dim ch As String, prevCh As String, prevPrev As String
     Dim out As String
 
     If Len(s) = 0 Then
-        InsertSpaceBeforeUpperIfPrevLower = ""
+        InsertSpacesSmart = ""
         Exit Function
     End If
 
     out = Mid$(s, 1, 1)
-    For i = 2 To Len(s)
-        prevCh = Mid$(s, i - 1, 1)
-        ch = Mid$(s, i, 1)
 
+    For i = 2 To Len(s)
+        ch = Mid$(s, i, 1)
+        prevCh = Mid$(s, i - 1, 1)
+        If i >= 3 Then
+            prevPrev = Mid$(s, i - 2, 1)
+        Else
+            prevPrev = ""
+        End If
+
+        ' 1) camelCase: aB -> a B
         If IsLowerLetter(prevCh) And IsUpperLetter(ch) Then
             out = out & " " & ch
+
+        ' 2) Acronym + lower: MWx -> MW x (две заглавные перед строчной)
+        ElseIf IsUpperLetter(prevPrev) And IsUpperLetter(prevCh) And IsLowerLetter(ch) Then
+            out = out & " " & ch
+
         Else
             out = out & ch
         End If
     Next i
 
-    InsertSpaceBeforeUpperIfPrevLower = out
+    InsertSpacesSmart = out
 End Function
 
-Private Function KeepLettersAndSpaces(ByVal s As String) As String
-    Dim i As Long, ch As String
-    Dim out As String
-    out = ""
+2) В CleanProductName замени вызов
 
-    For i = 1 To Len(s)
-        ch = Mid$(s, i, 1)
+t = InsertSpacesSmart(t)
 
-        If ch = " " Then
-            out = out & ch
-        ElseIf IsAnyLetter(ch) Then
-            out = out & ch
-        Else
-            ' всё остальное выкидываем
-        End If
-    Next i
 
-    KeepLettersAndSpaces = out
-End Function
+⸻
 
-Private Function NormalizeSpaces(ByVal s As String) As String
-    Dim t As String
-    t = Trim$(s)
-    Do While InStr(1, t, "  ", vbBinaryCompare) > 0
-        t = Replace(t, "  ", " ")
-    Loop
-    NormalizeSpaces = t
-End Function
+🔎 Быстрая проверка (чтобы не гадать)
 
-Private Function IsAnyLetter(ByVal ch As String) As Boolean
-    ' латиница + немецкие
-    Dim u As Long
-    u = AscW(ch)
+В VBA редакторе: Alt+F11 → Ctrl+G и выполни:
 
-    ' A-Z
-    If u >= 65 And u <= 90 Then IsAnyLetter = True: Exit Function
-    ' a-z
-    If u >= 97 And u <= 122 Then IsAnyLetter = True: Exit Function
+? CleanProductName("MW20x0,5l")
 
-    ' ÄÖÜäöüß
-    If ch = "Ä" Or ch = "Ö" Or ch = "Ü" _
-       Or ch = "ä" Or ch = "ö" Or ch = "ü" _
-       Or ch = "ß" Then
-        IsAnyLetter = True
-        Exit Function
-    End If
+Ожидаемый результат:
+mw x l
 
-    IsAnyLetter = False
-End Function
+⸻
 
-Private Function IsLowerLetter(ByVal ch As String) As Boolean
-    Dim u As Long
-    u = AscW(ch)
+Важное замечание (на будущее)
 
-    If u >= 97 And u <= 122 Then IsLowerLetter = True: Exit Function
-    If ch = "ä" Or ch = "ö" Or ch = "ü" Or ch = "ß" Then IsLowerLetter = True: Exit Function
+Сейчас ты удаляешь все числа, значит ты теряешь объём/вес (0,5l, 144g, 20x).
+Для кластеризации артиклей это обычно плохо: размер — сильнейший признак.
 
-    IsLowerLetter = False
-End Function
+Если хочешь, я добавлю второй вариант функции:
+	•	CleanProductNameKeepSize (оставляет 20x, 0,5l, 144g как нормализованные токены)
 
-Private Function IsUpperLetter(ByVal ch As String) As Boolean
-    Dim u As Long
-    u = AscW(ch)
-
-    If u >= 65 And u <= 90 Then IsUpperLetter = True: Exit Function
-    If ch = "Ä" Or ch = "Ö" Or ch = "Ü" Then IsUpperLetter = True: Exit Function
-
-    IsUpperLetter = False
-End Function
+Но для твоего вопроса: да, между MW и x должен быть пробел, и с InsertSpacesSmart он будет.
