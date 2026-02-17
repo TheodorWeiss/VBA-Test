@@ -1,29 +1,10 @@
-Option Explicit
+Hallo [Name],  
 
-Public Function InsertSpaceLowerUpper(ByVal s As String) As String
-    Dim i As Long
-    Dim ch As String, prevCh As String
-    Dim result As String
+die Datei ist angepasst – es sind nur die gewünschten Spalten enthalten (weitere sind ausgeblendet, können ggf. gelöscht werden).  
 
-    If Len(s) = 0 Then
-        InsertSpaceLowerUpper = ""
-        Exit Function
-    End If
+Die Filter Spanne > 50 % und national gelistet (20 Regionen) sind auf beiden relevanten Reitern gesetzt.  
 
-    result = Mid$(s, 1, 1)
+Im Reiter „Preise“ habe ich über die Artikelnummern aus der vorherigen Tabelle gefiltert, da dort keine Spanne/Regionen enthalten sind.  
 
-    For i = 2 To Len(s)
-        ch = Mid$(s, i, 1)
-        prevCh = Mid$(s, i - 1, 1)
-
-        ' Если предыдущая буква строчная
-        ' и текущая заглавная → вставляем пробел
-        If prevCh Like "[a-zäöüß]" And ch Like "[A-ZÄÖÜ]" Then
-            result = result & " " & ch
-        Else
-            result = result & ch
-        End If
-    Next i
-
-    InsertSpaceLowerUpper = result
-End Function
+Viele Grüße  
+Theo
