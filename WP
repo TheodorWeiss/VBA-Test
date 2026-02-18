@@ -166,3 +166,91 @@ TokenTable + Token→CanonicalToken по Token
 	•	и сколько уникальных токенов там участвует
 
 я подскажу оптимальные пороги, чтобы граф не раздувался и при этом давал нормальную унификацию брендов/обрубков.
+
+Ты прав — в том коде я специально убрал “вторую ориентацию пары” строкой:
+
+OneSide = Table.SelectRows(NoSelf, each [TokenA] < [TokenB])
+
+Это делалось, чтобы не удваивать пары (A,B) и (B,A) при расчёте Jaccard.
+Но для варианта А (обрубок → полная форма) ориентация важна, и такой шаг действительно может “спрятать” нужные связи.
+
+Что именно “ломается”
+
+Для правила Text.StartsWith(Long, Short) тебе нужно, чтобы в строке явно было:
+	•	Short = adventsk
+	•	Long = adventskalender
+
+А фильтр TokenA < TokenB оставляет ориентацию по алфавиту, а не по длине/вложенности. Поэтому часть “правильных” направленных пар может оказаться выкинутой.
+
+⸻
+
+✅ Исправление: не алфавит, а Short/Long по длине
+
+Нужно заменить логику “оставить одну сторону” на логику:
+	•	ShortToken = более короткий
+	•	LongToken = более длинный
+(а если равны — можно игнорировать, для варианта А это не важно)
+
+И уже потом считать overlap по (ShortToken, LongToken).
+
+⸻
+
+Готовый M-код (замена блока в TokenPairs)
+
+Ниже кусок, который заменяет шаги NoSelf + OneSide и делает правильные directed-пары для варианта А.
+
+Вставь после того, как у тебя есть таблица с колонками:
+Artikelnummer, TokenA, TokenB (после self-join expand/rename).
+
+// 4) Убираем A=A
+NoSelf = Table.SelectRows(Renamed, each [TokenA] <> [TokenB]),
+
+// 5) Строим ориентированную пару Short/Long по длине
+AddShort = Table.AddColumn(NoSelf, "ShortToken",
+    each if Text.Length([TokenA]) <= Text.Length([TokenB]) then [TokenA] else [TokenB],
+    type text),
+
+AddLong = Table.AddColumn(AddShort, "LongToken",
+    each if Text.Length([TokenA]) <= Text.Length([TokenB]) then [TokenB] else [TokenA],
+    type text),
+
+// 6) Убираем равную длину (для варианта А не нужно)
+OnlyStrict = Table.SelectRows(AddLong, each Text.Length([ShortToken]) < Text.Length([LongToken])),
+
+// 7) Убираем дубли внутри артикула (на всякий случай)
+DedupPairsInArtikel = Table.Distinct(OnlyStrict, {"Artikelnummer","ShortToken","LongToken"}),
+
+// 8) Считаем Overlap по (ShortToken, LongToken)
+PairCounts = Table.Group(DedupPairsInArtikel, {"ShortToken","LongToken"},
+    {{"Overlap", each Table.RowCount(_), Int64.Type}})
+
+Дальше вместо TokenA/TokenB в join’ах с DF используй ShortToken/LongToken.
+
+⸻
+
+Дальше — фильтр “вариант А”
+
+После того как ты подтянул DF_Short, DF_Long, добавь условия:
+	•	Text.StartsWith(LongToken, ShortToken)
+	•	ContainmentShort = Overlap / DF_Short >= 0.9
+	•	DF_Long > DF_Short (опционально)
+
+Пример добавления колонки containment и фильтра:
+
+AddContainShort = Table.AddColumn(PrevStep, "ContainmentShort",
+    each Number.From([Overlap]) / Number.From([DF_Short]), type number),
+
+HardEdges = Table.SelectRows(AddContainShort,
+    each [ContainmentShort] >= 0.9 and Text.StartsWith([LongToken], [ShortToken]))
+
+
+⸻
+
+Почему это решает твою претензию
+
+Потому что мы больше не теряем пары из-за лексикографического TokenA < TokenB.
+Мы всегда приводим пару к виду (короткий, длинный) и уже потом применяем StartsWith/Containment.
+
+⸻
+
+Если хочешь, я могу прямо собрать тебе полный TokenPairs_A (обрубок→полная) запрос целиком, чтобы ты вставил одним куском без правок — скажи только точные имена колонок в исходной таблице (у тебя, кажется, Artikelnummer и Token).
