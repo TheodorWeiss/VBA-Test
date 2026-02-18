@@ -1,92 +1,122 @@
-Понял. Тогда мы ставим жёсткое условие “token ⊆ canon”:
+Ок, даю точный M-код (Power Query), который из твоей таблицы TokenTable (Artikelnummer, Token) строит таблицу похожести токенов:
+	•	Overlap = сколько артикулов содержат оба токена
+	•	DF_A, DF_B (по сути TF после удаления дублей)
+	•	Jaccard
+	•	ContainmentA = Overlap / DF_A
+	•	ContainmentB = Overlap / DF_B
 
-нормализуем только если token является префиксом канона
-(то есть все символы token совпадают с началом canon)
+Дальше ты сам фильтруешь: например ContainmentA >= 0.9 + Text.StartsWith(TokenB, TokenA) (если хочешь железное “символы совпадают”).
 
-Это идеально решает твой кейс schwarz → schwart:
-schwarz не является префиксом schwart (на 6-й букве разница), значит замены не будет.
-
-⸻
-
-✅ Правило нормализации (строгое)
-
-Заменяем Token на Canonical, только если выполняется:
-	1.	Text.StartsWith(Canonical, Token)  (канон начинается с токена)
-	2.	Token <> Canonical
-	3.	(опционально) token короткий и/или редкий — чтобы не “прилипало” лишнее
-
-База (самое важное — совпадение символов):
-
-if [Canonical6] <> null and [Token] <> [Canonical6] and Text.StartsWith([Canonical6], [Token])
-then [Canonical6]
-else [Token]
-
+Ниже 2 запроса. Их можно вставить как два отдельных Query в Advanced Editor.
 
 ⸻
 
-🔥 Чтобы не сломать самостоятельные слова типа bier
+1) TokenDF (DF/TF по токенам)
 
-Добавляем “заменяем только коротышей”, например Len <= 7:
+Создай новый Query TokenDF:
 
-if [Canonical6] <> null
-   and [Token] <> [Canonical6]
-   and [Tokenlength] <= 7
-   and Text.StartsWith([Canonical6], [Token])
-then [Canonical6]
-else [Token]
+let
+    // !!! замени TokenTable на имя твоего запроса с колонками Artikelnummer, Token
+    Source = TokenTable,
 
-Если bier (Len=4) и канон вдруг bierschinken, то условие startswith истинно — но тебе это не нужно.
+    // 1) Убираем дубли: один Token один раз на Artikel
+    Dedup = Table.Distinct(Source, {"Artikelnummer", "Token"}),
 
-Значит добавляем ещё защиту по TF:
+    // 2) DF = сколько артикулов содержит токен
+    Grouped = Table.Group(Dedup, {"Token"}, {{"DF", each Table.RowCount(_), Int64.Type}}),
 
-if [TF] >= 10 then [Token]
-else if [Canonical6] <> null
-        and [Token] <> [Canonical6]
-        and [Tokenlength] <= 7
-        and Text.StartsWith([Canonical6], [Token])
-     then [Canonical6]
-     else [Token]
+    // (опционально) фильтр шума: токены, которые встречаются хотя бы 3 раза
+    Filtered = Table.SelectRows(Grouped, each [DF] >= 3)
+in
+    Filtered
 
-Это даёт:
-	•	bier (TF высокий) остаётся bier
-	•	berl (TF маленький) → berliner
-	•	adventsk → adventskalender / adventskerzen (в зависимости от канона)
+Если не хочешь фильтр DF >= 3 — убери строку Filtered и в in верни Grouped.
 
 ⸻
 
-✅ Важный момент: как выбирать канон
+2) TokenPairs (Overlap + Jaccard + Containment)
 
-Раз уж ты требуешь совпадение символов, канон должен быть реально “главной полной формой”, а не случайной.
+Создай новый Query TokenPairs:
 
-Поэтому канон лучше выбирать так:
-	•	сортировка: TF desc, потом Tokenlength desc
-	•	канон = первый
+let
+    // !!! замени TokenTable на имя твоего запроса с колонками Artikelnummer, Token
+    Source0 = TokenTable,
 
-Так меньше шансов, что каноном станет опечатка.
+    // 1) Убираем дубли: один Token один раз на Artikel
+    Source = Table.Distinct(Source0, {"Artikelnummer", "Token"}),
+
+    // 2) (опционально) заранее отфильтруем редкие токены через TokenDF
+    //    Если хочешь без фильтра — закомментируй 2 строки FilterJoin + ExpandKeep
+    FilterJoin = Table.NestedJoin(Source, {"Token"}, TokenDF, {"Token"}, "t", JoinKind.Inner),
+    ExpandKeep = Table.ExpandTableColumn(FilterJoin, "t", {"DF"}, {"DF_tmp"}),
+
+    // 3) Self-join по Artikelnummer: получаем пары токенов внутри одного артикула
+    SelfJoin = Table.NestedJoin(ExpandKeep, {"Artikelnummer"}, ExpandKeep, {"Artikelnummer"}, "R", JoinKind.Inner),
+    Expanded = Table.ExpandTableColumn(SelfJoin, "R", {"Token"}, {"TokenB"}),
+    Renamed = Table.RenameColumns(Expanded, {{"Token", "TokenA"}}),
+
+    // 4) Убираем A=A
+    NoSelf = Table.SelectRows(Renamed, each [TokenA] <> [TokenB]),
+
+    // 5) Убираем дубли пар (A,B) и (B,A)
+    //    Оставляем только где TokenA < TokenB (лексикографически)
+    OneSide = Table.SelectRows(NoSelf, each [TokenA] < [TokenB]),
+
+    // 6) Считаем Overlap = количество строк (т.е. количество артикулов, где пара встретилась)
+    PairCounts = Table.Group(OneSide, {"TokenA", "TokenB"}, {{"Overlap", each Table.RowCount(_), Int64.Type}}),
+
+    // 7) Подтягиваем DF для TokenA
+    JoinA = Table.NestedJoin(PairCounts, {"TokenA"}, TokenDF, {"Token"}, "A", JoinKind.LeftOuter),
+    ExpandA = Table.ExpandTableColumn(JoinA, "A", {"DF"}, {"DF_A"}),
+
+    // 8) Подтягиваем DF для TokenB
+    JoinB = Table.NestedJoin(ExpandA, {"TokenB"}, TokenDF, {"Token"}, "B", JoinKind.LeftOuter),
+    ExpandB = Table.ExpandTableColumn(JoinB, "B", {"DF"}, {"DF_B"}),
+
+    // 9) Метрики
+    AddUnion = Table.AddColumn(ExpandB, "Union", each [DF_A] + [DF_B] - [Overlap], Int64.Type),
+    AddJaccard = Table.AddColumn(AddUnion, "Jaccard", each if [Union] = 0 then null else Number.From([Overlap]) / Number.From([Union]), type number),
+
+    AddContA = Table.AddColumn(AddJaccard, "ContainmentA", each if [DF_A] = 0 then null else Number.From([Overlap]) / Number.From([DF_A]), type number),
+    AddContB = Table.AddColumn(AddContA, "ContainmentB", each if [DF_B] = 0 then null else Number.From([Overlap]) / Number.From([DF_B]), type number),
+
+    // 10) (опционально) Сортировка — сначала самые сильные связи
+    Sorted = Table.Sort(AddContB, {{"ContainmentA", Order.Descending}, {"Jaccard", Order.Descending}, {"Overlap", Order.Descending}})
+in
+    Sorted
+
 
 ⸻
 
-🧩 Готовая формула для твоей колонки TokenNorm
+Как использовать результат (без “кучи допущений”)
 
-(подставь свои имена полей, у тебя они: Token, TF, Tokenlength, CanonicalToken / Canonical6)
+Твои условия “символы токена должны совпадать с каноном” можно реализовать вообще без канона:
 
-if [TF] >= 10 then [Token]
-else if [CanonicalToken] <> null
-     and [Token] <> [CanonicalToken]
-     and [Tokenlength] <= 7
-     and Text.StartsWith([CanonicalToken], [Token])
-then [CanonicalToken]
-else [Token]
+A) Кандидаты на “обрубок → полная форма”
 
+Фильтруй TokenPairs так:
+	1.	ContainmentA >= 0.9 (почти все появления A включены в B)
+	2.	Text.StartsWith(TokenB, TokenA) (строгое совпадение символов, A — префикс B)
+	3.	DF_B > DF_A (B более распространён)
+
+Это даст пары вида:
+	•	adventsk → adventskalender
+	•	но не даст schwarz → schwart (не префикс)
+	•	и bier → bierschinken отрежется обычно containment’ом (будет далеко < 0.9)
+
+B) Если хочешь совсем жёстко против bier→bierschinken
+
+Добавь ещё:
+	•	Text.Length(TokenA) <= 6 (нормализуем только коротышей)
 
 ⸻
 
-Почему это соответствует твоему “самому важному условию”
+Важно про производительность
 
-Потому что Text.StartsWith(canon, token) гарантирует:
-	•	символ 1..len(token) полностью совпадают
-	•	никаких schwarz → schwart, только berl → berliner
+Self-join взрывается по размеру. Поэтому рекомендую:
+	•	оставить TokenDF фильтр DF >= 3 (или >= 5)
+	•	или вообще работать по топ-N токенов (например DF>=20) для первой итерации
 
 ⸻
 
-Если скажешь, какой префикс ты сейчас используешь для канона (Prefix6/7/10) и как называется колонка канона в твоём запросе (CanonicalToken или Canonical6), я подгоню формулу 1-в-1 под твою таблицу, чтобы можно было просто вставить.
+Если напишешь, как у тебя реально называются колонки (точно Artikelnummer/Token?) и имя запроса исходной таблицы (у тебя на скринах есть TokenTable), я подставлю 1-в-1, чтобы можно было просто копипастить без правок.
