@@ -1,122 +1,168 @@
-Ок, даю точный M-код (Power Query), который из твоей таблицы TokenTable (Artikelnummer, Token) строит таблицу похожести токенов:
-	•	Overlap = сколько артикулов содержат оба токена
-	•	DF_A, DF_B (по сути TF после удаления дублей)
-	•	Jaccard
-	•	ContainmentA = Overlap / DF_A
-	•	ContainmentB = Overlap / DF_B
+Круто, что метрики “зашли” — это реально самый надёжный сигнал в твоих данных. Теперь про автоматизацию “объединить синонимы”.
 
-Дальше ты сам фильтруешь: например ContainmentA >= 0.9 + Text.StartsWith(TokenB, TokenA) (если хочешь железное “символы совпадают”).
+Здесь ключевое: объединение = найти компоненты связности в графе.
+	•	вершины = токены
+	•	ребро между A и B, если они “достаточно похожи” по твоим метрикам
+	•	дальше каждая компонента = группа синонимов/вариантов
+	•	внутри компоненты выбираем канон (обычно самый частотный DF)
 
-Ниже 2 запроса. Их можно вставить как два отдельных Query в Advanced Editor.
+Это автоматизируется полностью, без ручных словарей. Ниже — конкретный PQ-пайплайн.
 
 ⸻
 
-1) TokenDF (DF/TF по токенам)
+1) Сначала задаём “правила ребра” (edge filter)
 
-Создай новый Query TokenDF:
+Ты сам решаешь, что считать “синонимом”. Я рекомендую сделать 2 типа связей:
+
+A) “Обрубок → полная форма” (очень надёжно)
+
+Используй:
+	•	ContainmentA >= 0.9
+	•	DF_B > DF_A
+	•	Text.StartsWith(TokenB, TokenA)
+	•	(опционально) Text.Length(TokenA) <= 7
+
+Это будет направленное ребро A→B, но для кластеров можно считать как связь.
+
+B) “Две формы одного слова/опечатки” (осторожнее)
+
+Здесь лучше:
+	•	Jaccard >= 0.8
+	•	min(ContainmentA,ContainmentB) >= 0.7
+(это уже “почти одинаковые”)
+
+⸻
+
+2) Построить таблицу “Edges”
+
+Из твоего TokenPairs сделай запрос Edges (оставь только нужные связи):
+
+Колонки:
+	•	From = TokenA
+	•	To = TokenB
+
+И чтобы граф был неориентированный, добавь “обратные” ребра:
+	•	From=TokenB, To=TokenA
+
+(потом просто Append)
+
+⸻
+
+3) Автоматически получить группы (connected components) в Power Query
+
+Power Query не имеет “из коробки” граф-алгоритмов, но connected components можно сделать итеративно (label propagation). Работает отлично на твоих размерах, если токены после фильтра — не десятки тысяч.
+
+Идея label propagation
+	1.	каждому токену присваиваем Group = Token (сам себе)
+	2.	потом много раз обновляем:
+Group(token) = MIN(Group(neighbors))
+	3.	когда перестаёт меняться — это компоненты связности
+
+⸻
+
+Готовый M-код: построить Token→Group по Edges
+
+Создай новый query TokenGroups:
 
 let
-    // !!! замени TokenTable на имя твоего запроса с колонками Artikelnummer, Token
-    Source = TokenTable,
+    // Edges: таблица с колонками From, To (неориентированные ребра)
+    Edges0 = Edges,
 
-    // 1) Убираем дубли: один Token один раз на Artikel
-    Dedup = Table.Distinct(Source, {"Artikelnummer", "Token"}),
+    // Список всех токенов
+    NodesFrom = Table.Distinct(Table.SelectColumns(Edges0, {"From"})),
+    NodesTo   = Table.Distinct(Table.RenameColumns(Table.SelectColumns(Edges0, {"To"}), {{"To","From"}})),
+    Nodes = Table.Distinct(Table.Combine({NodesFrom, NodesTo})),
+    Nodes1 = Table.RenameColumns(Nodes, {{"From","Token"}}),
 
-    // 2) DF = сколько артикулов содержит токен
-    Grouped = Table.Group(Dedup, {"Token"}, {{"DF", each Table.RowCount(_), Int64.Type}}),
+    // стартовая метка = сам токен
+    Init = Table.AddColumn(Nodes1, "Group", each [Token], type text),
 
-    // (опционально) фильтр шума: токены, которые встречаются хотя бы 3 раза
-    Filtered = Table.SelectRows(Grouped, each [DF] >= 3)
+    // функция одного шага "распространения метки"
+    Step = (state as table) as table =>
+        let
+            // присоединяем Group соседей
+            Join1 = Table.NestedJoin(Edges0, {"From"}, state, {"Token"}, "S", JoinKind.LeftOuter),
+            Expand1 = Table.ExpandTableColumn(Join1, "S", {"Group"}, {"FromGroup"}),
+
+            Join2 = Table.NestedJoin(Expand1, {"To"}, state, {"Token"}, "T", JoinKind.LeftOuter),
+            Expand2 = Table.ExpandTableColumn(Join2, "T", {"Group"}, {"ToGroup"}),
+
+            // для каждого From берём минимальную группу среди себя и соседей
+            Cand = Table.AddColumn(Expand2, "CandGroup",
+                    each List.Min(List.RemoveNulls({[FromGroup],[ToGroup]})),
+                    type text),
+
+            Agg = Table.Group(Cand, {"From"}, {{"NewGroup", each List.Min([CandGroup]), type text}}),
+            Agg2 = Table.RenameColumns(Agg, {{"From","Token"},{"NewGroup","Group"}})
+        in
+            Agg2,
+
+    // итерации до стабилизации (ограничим 30 шагами)
+    IterList = List.Generate(
+        () => [i=0, t=Init],
+        each [i] < 30,
+        each [i=[i]+1, t=Step([t])],
+        each [t]
+    ),
+
+    // берём последнюю таблицу
+    Result = List.Last(IterList)
 in
-    Filtered
+    Result
 
-Если не хочешь фильтр DF >= 3 — убери строку Filtered и в in верни Grouped.
+Получишь:
 
-⸻
+Token | Group
 
-2) TokenPairs (Overlap + Jaccard + Containment)
-
-Создай новый Query TokenPairs:
-
-let
-    // !!! замени TokenTable на имя твоего запроса с колонками Artikelnummer, Token
-    Source0 = TokenTable,
-
-    // 1) Убираем дубли: один Token один раз на Artikel
-    Source = Table.Distinct(Source0, {"Artikelnummer", "Token"}),
-
-    // 2) (опционально) заранее отфильтруем редкие токены через TokenDF
-    //    Если хочешь без фильтра — закомментируй 2 строки FilterJoin + ExpandKeep
-    FilterJoin = Table.NestedJoin(Source, {"Token"}, TokenDF, {"Token"}, "t", JoinKind.Inner),
-    ExpandKeep = Table.ExpandTableColumn(FilterJoin, "t", {"DF"}, {"DF_tmp"}),
-
-    // 3) Self-join по Artikelnummer: получаем пары токенов внутри одного артикула
-    SelfJoin = Table.NestedJoin(ExpandKeep, {"Artikelnummer"}, ExpandKeep, {"Artikelnummer"}, "R", JoinKind.Inner),
-    Expanded = Table.ExpandTableColumn(SelfJoin, "R", {"Token"}, {"TokenB"}),
-    Renamed = Table.RenameColumns(Expanded, {{"Token", "TokenA"}}),
-
-    // 4) Убираем A=A
-    NoSelf = Table.SelectRows(Renamed, each [TokenA] <> [TokenB]),
-
-    // 5) Убираем дубли пар (A,B) и (B,A)
-    //    Оставляем только где TokenA < TokenB (лексикографически)
-    OneSide = Table.SelectRows(NoSelf, each [TokenA] < [TokenB]),
-
-    // 6) Считаем Overlap = количество строк (т.е. количество артикулов, где пара встретилась)
-    PairCounts = Table.Group(OneSide, {"TokenA", "TokenB"}, {{"Overlap", each Table.RowCount(_), Int64.Type}}),
-
-    // 7) Подтягиваем DF для TokenA
-    JoinA = Table.NestedJoin(PairCounts, {"TokenA"}, TokenDF, {"Token"}, "A", JoinKind.LeftOuter),
-    ExpandA = Table.ExpandTableColumn(JoinA, "A", {"DF"}, {"DF_A"}),
-
-    // 8) Подтягиваем DF для TokenB
-    JoinB = Table.NestedJoin(ExpandA, {"TokenB"}, TokenDF, {"Token"}, "B", JoinKind.LeftOuter),
-    ExpandB = Table.ExpandTableColumn(JoinB, "B", {"DF"}, {"DF_B"}),
-
-    // 9) Метрики
-    AddUnion = Table.AddColumn(ExpandB, "Union", each [DF_A] + [DF_B] - [Overlap], Int64.Type),
-    AddJaccard = Table.AddColumn(AddUnion, "Jaccard", each if [Union] = 0 then null else Number.From([Overlap]) / Number.From([Union]), type number),
-
-    AddContA = Table.AddColumn(AddJaccard, "ContainmentA", each if [DF_A] = 0 then null else Number.From([Overlap]) / Number.From([DF_A]), type number),
-    AddContB = Table.AddColumn(AddContA, "ContainmentB", each if [DF_B] = 0 then null else Number.From([Overlap]) / Number.From([DF_B]), type number),
-
-    // 10) (опционально) Сортировка — сначала самые сильные связи
-    Sorted = Table.Sort(AddContB, {{"ContainmentA", Order.Descending}, {"Jaccard", Order.Descending}, {"Overlap", Order.Descending}})
-in
-    Sorted
-
+Где Group — id компоненты (минимальная метка в компоненте).
 
 ⸻
 
-Как использовать результат (без “кучи допущений”)
+4) Выбрать канон внутри группы
 
-Твои условия “символы токена должны совпадать с каноном” можно реализовать вообще без канона:
+Дальше просто:
+	1.	Join TokenGroups с TokenDF (DF частота)
+	2.	Group by Group, выбрать токен с максимальным DF
+	3.	Получится Group → CanonicalToken
+	4.	Join обратно: Token → CanonicalToken
 
-A) Кандидаты на “обрубок → полная форма”
-
-Фильтруй TokenPairs так:
-	1.	ContainmentA >= 0.9 (почти все появления A включены в B)
-	2.	Text.StartsWith(TokenB, TokenA) (строгое совпадение символов, A — префикс B)
-	3.	DF_B > DF_A (B более распространён)
-
-Это даст пары вида:
-	•	adventsk → adventskalender
-	•	но не даст schwarz → schwart (не префикс)
-	•	и bier → bierschinken отрежется обычно containment’ом (будет далеко < 0.9)
-
-B) Если хочешь совсем жёстко против bier→bierschinken
-
-Добавь ещё:
-	•	Text.Length(TokenA) <= 6 (нормализуем только коротышей)
+Правило канона:
+	•	самый частотный DF
+	•	при равенстве — самый длинный
 
 ⸻
 
-Важно про производительность
+5) Применить к TokenTable
 
-Self-join взрывается по размеру. Поэтому рекомендую:
-	•	оставить TokenDF фильтр DF >= 3 (или >= 5)
-	•	или вообще работать по топ-N токенов (например DF>=20) для первой итерации
+Merge:
+TokenTable + Token→CanonicalToken по Token
+и заменяешь Token на CanonicalToken.
 
 ⸻
 
-Если напишешь, как у тебя реально называются колонки (точно Artikelnummer/Token?) и имя запроса исходной таблицы (у тебя на скринах есть TokenTable), я подставлю 1-в-1, чтобы можно было просто копипастить без правок.
+6) Что важно, чтобы не множить ошибки
+
+Ты правильно боишься “слишком много допущений”. Чтобы автомат был безопасным:
+
+✅ Делай двухуровневые связи:
+	•	“Hard edges” (Containment + StartsWith) — почти безошибочно
+	•	“Soft edges” (Jaccard) — только если хочешь расширять
+
+И компоненты строй сначала только по Hard edges.
+Потом, если надо, добавляй Soft edges отдельно.
+
+⸻
+
+Практический старт (я бы так сделал)
+	1.	Edges = только ContainmentA >= 0.9 + StartsWith
+	2.	TokenGroups → Canonical
+	3.	применить и посмотреть качество на 200–300 случайных артикулах
+	4.	если мало объединений — снижаем containment до 0.85 или добавляем Jaccard 0.85
+
+⸻
+
+Если скажешь:
+	•	сколько строк в Edges получается при ContainmentA >= 0.9 + StartsWith
+	•	и сколько уникальных токенов там участвует
+
+я подскажу оптимальные пороги, чтобы граф не раздувался и при этом давал нормальную унификацию брендов/обрубков.
