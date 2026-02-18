@@ -1,256 +1,243 @@
-Круто, что метрики “зашли” — это реально самый надёжный сигнал в твоих данных. Теперь про автоматизацию “объединить синонимы”.
+Да, всё понятно. Ты описал контекстную нормализацию (почти как word-embeddings, но на PQ):
+	1.	генерируем кандидат-пары по похожести строк (общий префикс / “почти префикс”)
+	2.	для каждой пары считаем похожесть контекста = сколько общих соседних токенов встречается с обоими
+	3.	на основании этого уже решаем “синоним/вариант”.
 
-Здесь ключевое: объединение = найти компоненты связности в графе.
-	•	вершины = токены
-	•	ребро между A и B, если они “достаточно похожи” по твоим метрикам
-	•	дальше каждая компонента = группа синонимов/вариантов
-	•	внутри компоненты выбираем канон (обычно самый частотный DF)
-
-Это автоматизируется полностью, без ручных словарей. Ниже — конкретный PQ-пайплайн.
-
-⸻
-
-1) Сначала задаём “правила ребра” (edge filter)
-
-Ты сам решаешь, что считать “синонимом”. Я рекомендую сделать 2 типа связей:
-
-A) “Обрубок → полная форма” (очень надёжно)
-
-Используй:
-	•	ContainmentA >= 0.9
-	•	DF_B > DF_A
-	•	Text.StartsWith(TokenB, TokenA)
-	•	(опционально) Text.Length(TokenA) <= 7
-
-Это будет направленное ребро A→B, но для кластеров можно считать как связь.
-
-B) “Две формы одного слова/опечатки” (осторожнее)
-
-Здесь лучше:
-	•	Jaccard >= 0.8
-	•	min(ContainmentA,ContainmentB) >= 0.7
-(это уже “почти одинаковые”)
+Ниже даю рабочий Power Query M-код блоками (вставляешь как отдельные запросы). Я специально сделал так, чтобы всё было без Левенштейна (дорого), но с:
+	•	длиной общего префикса
+	•	“разрешить 1–2 ошибки” в начале (опционально)
+	•	сходством контекстов через Jaccard/Overlap
 
 ⸻
 
-2) Построить таблицу “Edges”
+0) Предпосылка
 
-Из твоего TokenPairs сделай запрос Edges (оставь только нужные связи):
+Есть таблица TokenTable с колонками:
+	•	Artikelnummer
+	•	Token
 
-Колонки:
-	•	From = TokenA
-	•	To = TokenB
-
-И чтобы граф был неориентированный, добавь “обратные” ребра:
-	•	From=TokenB, To=TokenA
-
-(потом просто Append)
+Ты дубли и лишние столбцы уберёшь сам — ок.
 
 ⸻
 
-3) Автоматически получить группы (connected components) в Power Query
-
-Power Query не имеет “из коробки” граф-алгоритмов, но connected components можно сделать итеративно (label propagation). Работает отлично на твоих размерах, если токены после фильтра — не десятки тысяч.
-
-Идея label propagation
-	1.	каждому токену присваиваем Group = Token (сам себе)
-	2.	потом много раз обновляем:
-Group(token) = MIN(Group(neighbors))
-	3.	когда перестаёт меняться — это компоненты связности
-
-⸻
-
-Готовый M-код: построить Token→Group по Edges
-
-Создай новый query TokenGroups:
+1) Query: TokenArtikel (dedup)
 
 let
-    // Edges: таблица с колонками From, To (неориентированные ребра)
-    Edges0 = Edges,
-
-    // Список всех токенов
-    NodesFrom = Table.Distinct(Table.SelectColumns(Edges0, {"From"})),
-    NodesTo   = Table.Distinct(Table.RenameColumns(Table.SelectColumns(Edges0, {"To"}), {{"To","From"}})),
-    Nodes = Table.Distinct(Table.Combine({NodesFrom, NodesTo})),
-    Nodes1 = Table.RenameColumns(Nodes, {{"From","Token"}}),
-
-    // стартовая метка = сам токен
-    Init = Table.AddColumn(Nodes1, "Group", each [Token], type text),
-
-    // функция одного шага "распространения метки"
-    Step = (state as table) as table =>
-        let
-            // присоединяем Group соседей
-            Join1 = Table.NestedJoin(Edges0, {"From"}, state, {"Token"}, "S", JoinKind.LeftOuter),
-            Expand1 = Table.ExpandTableColumn(Join1, "S", {"Group"}, {"FromGroup"}),
-
-            Join2 = Table.NestedJoin(Expand1, {"To"}, state, {"Token"}, "T", JoinKind.LeftOuter),
-            Expand2 = Table.ExpandTableColumn(Join2, "T", {"Group"}, {"ToGroup"}),
-
-            // для каждого From берём минимальную группу среди себя и соседей
-            Cand = Table.AddColumn(Expand2, "CandGroup",
-                    each List.Min(List.RemoveNulls({[FromGroup],[ToGroup]})),
-                    type text),
-
-            Agg = Table.Group(Cand, {"From"}, {{"NewGroup", each List.Min([CandGroup]), type text}}),
-            Agg2 = Table.RenameColumns(Agg, {{"From","Token"},{"NewGroup","Group"}})
-        in
-            Agg2,
-
-    // итерации до стабилизации (ограничим 30 шагами)
-    IterList = List.Generate(
-        () => [i=0, t=Init],
-        each [i] < 30,
-        each [i=[i]+1, t=Step([t])],
-        each [t]
-    ),
-
-    // берём последнюю таблицу
-    Result = List.Last(IterList)
+    Source = TokenTable,
+    Dedup = Table.Distinct(Source, {"Artikelnummer", "Token"})
 in
-    Result
-
-Получишь:
-
-Token | Group
-
-Где Group — id компоненты (минимальная метка в компоненте).
-
-⸻
-
-4) Выбрать канон внутри группы
-
-Дальше просто:
-	1.	Join TokenGroups с TokenDF (DF частота)
-	2.	Group by Group, выбрать токен с максимальным DF
-	3.	Получится Group → CanonicalToken
-	4.	Join обратно: Token → CanonicalToken
-
-Правило канона:
-	•	самый частотный DF
-	•	при равенстве — самый длинный
-
-⸻
-
-5) Применить к TokenTable
-
-Merge:
-TokenTable + Token→CanonicalToken по Token
-и заменяешь Token на CanonicalToken.
-
-⸻
-
-6) Что важно, чтобы не множить ошибки
-
-Ты правильно боишься “слишком много допущений”. Чтобы автомат был безопасным:
-
-✅ Делай двухуровневые связи:
-	•	“Hard edges” (Containment + StartsWith) — почти безошибочно
-	•	“Soft edges” (Jaccard) — только если хочешь расширять
-
-И компоненты строй сначала только по Hard edges.
-Потом, если надо, добавляй Soft edges отдельно.
-
-⸻
-
-Практический старт (я бы так сделал)
-	1.	Edges = только ContainmentA >= 0.9 + StartsWith
-	2.	TokenGroups → Canonical
-	3.	применить и посмотреть качество на 200–300 случайных артикулах
-	4.	если мало объединений — снижаем containment до 0.85 или добавляем Jaccard 0.85
-
-⸻
-
-Если скажешь:
-	•	сколько строк в Edges получается при ContainmentA >= 0.9 + StartsWith
-	•	и сколько уникальных токенов там участвует
-
-я подскажу оптимальные пороги, чтобы граф не раздувался и при этом давал нормальную унификацию брендов/обрубков.
-
-Ты прав — в том коде я специально убрал “вторую ориентацию пары” строкой:
-
-OneSide = Table.SelectRows(NoSelf, each [TokenA] < [TokenB])
-
-Это делалось, чтобы не удваивать пары (A,B) и (B,A) при расчёте Jaccard.
-Но для варианта А (обрубок → полная форма) ориентация важна, и такой шаг действительно может “спрятать” нужные связи.
-
-Что именно “ломается”
-
-Для правила Text.StartsWith(Long, Short) тебе нужно, чтобы в строке явно было:
-	•	Short = adventsk
-	•	Long = adventskalender
-
-А фильтр TokenA < TokenB оставляет ориентацию по алфавиту, а не по длине/вложенности. Поэтому часть “правильных” направленных пар может оказаться выкинутой.
-
-⸻
-
-✅ Исправление: не алфавит, а Short/Long по длине
-
-Нужно заменить логику “оставить одну сторону” на логику:
-	•	ShortToken = более короткий
-	•	LongToken = более длинный
-(а если равны — можно игнорировать, для варианта А это не важно)
-
-И уже потом считать overlap по (ShortToken, LongToken).
-
-⸻
-
-Готовый M-код (замена блока в TokenPairs)
-
-Ниже кусок, который заменяет шаги NoSelf + OneSide и делает правильные directed-пары для варианта А.
-
-Вставь после того, как у тебя есть таблица с колонками:
-Artikelnummer, TokenA, TokenB (после self-join expand/rename).
-
-// 4) Убираем A=A
-NoSelf = Table.SelectRows(Renamed, each [TokenA] <> [TokenB]),
-
-// 5) Строим ориентированную пару Short/Long по длине
-AddShort = Table.AddColumn(NoSelf, "ShortToken",
-    each if Text.Length([TokenA]) <= Text.Length([TokenB]) then [TokenA] else [TokenB],
-    type text),
-
-AddLong = Table.AddColumn(AddShort, "LongToken",
-    each if Text.Length([TokenA]) <= Text.Length([TokenB]) then [TokenB] else [TokenA],
-    type text),
-
-// 6) Убираем равную длину (для варианта А не нужно)
-OnlyStrict = Table.SelectRows(AddLong, each Text.Length([ShortToken]) < Text.Length([LongToken])),
-
-// 7) Убираем дубли внутри артикула (на всякий случай)
-DedupPairsInArtikel = Table.Distinct(OnlyStrict, {"Artikelnummer","ShortToken","LongToken"}),
-
-// 8) Считаем Overlap по (ShortToken, LongToken)
-PairCounts = Table.Group(DedupPairsInArtikel, {"ShortToken","LongToken"},
-    {{"Overlap", each Table.RowCount(_), Int64.Type}})
-
-Дальше вместо TokenA/TokenB в join’ах с DF используй ShortToken/LongToken.
-
-⸻
-
-Дальше — фильтр “вариант А”
-
-После того как ты подтянул DF_Short, DF_Long, добавь условия:
-	•	Text.StartsWith(LongToken, ShortToken)
-	•	ContainmentShort = Overlap / DF_Short >= 0.9
-	•	DF_Long > DF_Short (опционально)
-
-Пример добавления колонки containment и фильтра:
-
-AddContainShort = Table.AddColumn(PrevStep, "ContainmentShort",
-    each Number.From([Overlap]) / Number.From([DF_Short]), type number),
-
-HardEdges = Table.SelectRows(AddContainShort,
-    each [ContainmentShort] >= 0.9 and Text.StartsWith([LongToken], [ShortToken]))
+    Dedup
 
 
 ⸻
 
-Почему это решает твою претензию
+2) Query: TokenDF
 
-Потому что мы больше не теряем пары из-за лексикографического TokenA < TokenB.
-Мы всегда приводим пару к виду (короткий, длинный) и уже потом применяем StartsWith/Containment.
+DF = сколько артикулов содержит токен.
+
+let
+    Source = TokenArtikel,
+    DF = Table.Group(Source, {"Token"}, {{"DF", each Table.RowCount(_), Int64.Type}})
+in
+    DF
+
 
 ⸻
 
-Если хочешь, я могу прямо собрать тебе полный TokenPairs_A (обрубок→полная) запрос целиком, чтобы ты вставил одним куском без правок — скажи только точные имена колонок в исходной таблице (у тебя, кажется, Artikelnummer и Token).
+3) Query: TokenContext
+
+Это “контекст”: для каждого токена список соседей (другие токены в тех же артикулах) и сколько раз встречались.
+
+let
+    Source = TokenArtikel,
+
+    // self-join по Artikelnummer => пары токенов внутри артикула
+    J = Table.NestedJoin(Source, {"Artikelnummer"}, Source, {"Artikelnummer"}, "R", JoinKind.Inner),
+    E = Table.ExpandTableColumn(J, "R", {"Token"}, {"CoToken"}),
+    Ren = Table.RenameColumns(E, {{"Token","Token"}}),
+
+    // убрать Token=CoToken
+    NoSelf = Table.SelectRows(Ren, each [Token] <> [CoToken]),
+
+    // частота соседства (можно и просто distinct, но частота полезна)
+    Ctx = Table.Group(NoSelf, {"Token","CoToken"}, {{"C", each Table.RowCount(_), Int64.Type}})
+in
+    Ctx
+
+Если хочешь “чисто множество”, а не частоты: после Ctx можно заменить C на 1.
+
+⸻
+
+4) Функции для похожести строк
+
+4.1 Общий префикс (кол-во совпавших первых букв)
+
+Создай query fnCommonPrefixLen (это функция):
+
+(tokenA as text, tokenB as text) as number =>
+let
+    a = Text.ToList(tokenA),
+    b = Text.ToList(tokenB),
+    n = List.Min({List.Count(a), List.Count(b)}),
+    pairs = List.Zip({List.FirstN(a, n), List.FirstN(b, n)}),
+    flags = List.Transform(pairs, each _{0} = _{1}),
+    // считаем подряд идущие True с начала
+    posFalse = List.PositionOf(flags, false),
+    res = if posFalse = -1 then n else posFalse
+in
+    res
+
+4.2 (Опционально) “почти префикс”: допускаем 1–2 различия в первых N символах
+
+Если хочешь “макс 1/2 буквы отличаются” на старте, делаем упрощённый Hamming на первых N символах (без вставок/удалений, только замены). Это дешево.
+
+Query fnHammingFirstN:
+
+(tokenA as text, tokenB as text, n as number) as number =>
+let
+    a = Text.ToList(Text.Start(tokenA, n)),
+    b = Text.ToList(Text.Start(tokenB, n)),
+    m = List.Min({List.Count(a), List.Count(b)}),
+    pairs = List.Zip({List.FirstN(a, m), List.FirstN(b, m)}),
+    diffs = List.Sum(List.Transform(pairs, each if _{0} = _{1} then 0 else 1))
+in
+    diffs
+
+
+⸻
+
+5) Query: CandidatePairs
+
+Генерируем пары токенов “похожи по началу”.
+Чтобы не взорвать вычисления, делаем “корзины” по Prefix4/5 и сравниваем внутри корзины.
+
+Важно: это не Левенштейн по всем 12k×12k, а локально.
+
+let
+    // берём токены + DF
+    T0 = Table.NestedJoin(TokenDF, {"Token"}, TokenDF, {"Token"}, "x", JoinKind.LeftOuter),
+    // проще: просто TokenDF как список токенов
+    Tokens = TokenDF,
+
+    // добавим длину и Prefix5 (можешь 4/6)
+    AddLen = Table.AddColumn(Tokens, "Len", each Text.Length([Token]), Int64.Type),
+    AddP5  = Table.AddColumn(AddLen, "P5", each Text.Start([Token], 5), type text),
+
+    // self-join по P5 (кандидаты из одной корзины)
+    J = Table.NestedJoin(AddP5, {"P5"}, AddP5, {"P5"}, "R", JoinKind.Inner),
+    E = Table.ExpandTableColumn(J, "R", {"Token","DF","Len"}, {"TokenB","DF_B","LenB"}),
+
+    Ren = Table.RenameColumns(E, {{"Token","TokenA"},{"DF","DF_A"},{"Len","LenA"}}),
+
+    // убрать A=B и оставить одну сторону (чтобы не дублировать)
+    OneSide = Table.SelectRows(Ren, each [TokenA] < [TokenB]),
+
+    // общий префикс и доля совпадения по minLen
+    AddCPL = Table.AddColumn(OneSide, "CPL", each fnCommonPrefixLen([TokenA],[TokenB]), Int64.Type),
+    AddMinLen = Table.AddColumn(AddCPL, "MinLen", each List.Min({[LenA],[LenB]}), Int64.Type),
+    AddRatio = Table.AddColumn(AddMinLen, "PrefixRatio", each Number.From([CPL]) / Number.From([MinLen]), type number),
+
+    // (опционально) разрешаем 1–2 отличия на первых N символах
+    // N берём Min(6, MinLen)
+    AddN = Table.AddColumn(AddRatio, "N", each List.Min({6, [MinLen]}), Int64.Type),
+    AddHam = Table.AddColumn(AddN, "HamN", each fnHammingFirstN([TokenA],[TokenB],[N]), Int64.Type),
+
+    // Фильтр кандидатов:
+    // либо 100% префикс (PrefixRatio=1),
+    // либо почти (>=0.8) и отличий в первых N <=1
+    Cand = Table.SelectRows(AddHam, each
+        ([PrefixRatio] = 1)
+        or ([PrefixRatio] >= 0.8 and [HamN] <= 1)
+    )
+in
+    Cand
+
+На выходе: TokenA, TokenB, DF_A, DF_B, PrefixRatio, HamN …
+
+⸻
+
+6) Query: PairContextSim (самое важное)
+
+Теперь для каждой пары кандидатов считаем, сколько общих соседей.
+
+Идея:
+	•	берём TokenContext (Token, CoToken)
+	•	для пары (A,B) ищем пересечение множеств CoToken
+
+let
+    Pairs = CandidatePairs,
+
+    // Присоединим контекст A
+    JA = Table.NestedJoin(Pairs, {"TokenA"}, TokenContext, {"Token"}, "CtxA", JoinKind.LeftOuter),
+    EA = Table.ExpandTableColumn(JA, "CtxA", {"CoToken"}, {"CoA"}),
+
+    // Присоединим контекст B (через отдельный join от исходной пары!)
+    JB = Table.NestedJoin(EA, {"TokenB"}, TokenContext, {"Token"}, "CtxB", JoinKind.LeftOuter),
+    EB = Table.ExpandTableColumn(JB, "CtxB", {"CoToken"}, {"CoB"}),
+
+    // Оставляем только строки, где сосед совпал (пересечение)
+    InterRows = Table.SelectRows(EB, each [CoA] = [CoB]),
+
+    // IntersectionCount = сколько общих соседей (distinct)
+    Inter = Table.Group(InterRows, {"TokenA","TokenB"}, {{"Inter", each List.Count(List.Distinct([CoA])), Int64.Type}}),
+
+    // Теперь считаем |CtxA| и |CtxB| (размеры множеств)
+    CtxSize = Table.Group(TokenContext, {"Token"}, {{"CtxSize", each List.Count(List.Distinct([CoToken])), Int64.Type}}),
+
+    AddA = Table.NestedJoin(Inter, {"TokenA"}, CtxSize, {"Token"}, "A", JoinKind.LeftOuter),
+    EA2  = Table.ExpandTableColumn(AddA, "A", {"CtxSize"}, {"CtxA"}),
+
+    AddB = Table.NestedJoin(EA2, {"TokenB"}, CtxSize, {"Token"}, "B", JoinKind.LeftOuter),
+    EB2  = Table.ExpandTableColumn(AddB, "B", {"CtxSize"}, {"CtxB"}),
+
+    // Jaccard по контекстам
+    AddUnion = Table.AddColumn(EB2, "CtxUnion", each [CtxA] + [CtxB] - [Inter], Int64.Type),
+    AddJ = Table.AddColumn(AddUnion, "CtxJaccard", each if [CtxUnion]=0 then null else Number.From([Inter]) / Number.From([CtxUnion]), type number),
+
+    // Containment контекста (вложенность)
+    AddContA = Table.AddColumn(AddJ, "CtxContainA", each if [CtxA]=0 then null else Number.From([Inter]) / Number.From([CtxA]), type number),
+    AddContB = Table.AddColumn(AddContA, "CtxContainB", each if [CtxB]=0 then null else Number.From([Inter]) / Number.From([CtxB]), type number),
+
+    Sorted = Table.Sort(AddContB, {{"CtxJaccard", Order.Descending}, {"Inter", Order.Descending}})
+in
+    Sorted
+
+Теперь у тебя для каждой пары есть реальная “близость” по окружению. Это ровно то, что ты хотел.
+
+⸻
+
+7) Как из этого сделать “авто-синонимы” (правило)
+
+Дальше ты выбираешь пороги. Например:
+
+Обрубок/вариант формы (типа pils ↔ pilsener)
+	•	PrefixRatio >= 0.8
+	•	CtxJaccard >= 0.3 (или 0.4)
+	•	Inter >= 5 (чтобы не на случайных совпадениях)
+
+Почти одно и то же (синоним/вариант написания)
+	•	CtxContainA >= 0.8 или CtxContainB >= 0.8
+	•	Inter >= 10
+
+⸻
+
+8) Как реально “объединить” в канон
+
+После того как ты отфильтровал “сильные пары”, строишь граф и компоненты (как я писал раньше).
+Но теперь ребро куда качественнее: оно основано на контексте, а не на префиксе.
+
+Канон внутри группы выбирай:
+	•	максимальный DF
+	•	при равенстве — длиннее
+
+⸻
+
+Ключевое уточнение про твою цель
+
+Ты хочешь избежать “кучи допущений”. Этот подход хорош тем, что:
+	•	строковый фильтр (prefix/ham) только для генерации кандидатов
+	•	решение принимает контекст (данные)
+
+⸻
+
+Если скажешь, сколько строк получилось в CandidatePairs (после фильтра PrefixRatio/Ham), я подскажу пороги CtxJaccard/Inter, чтобы не перегнуть и не слить лишнее.
