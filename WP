@@ -1,243 +1,118 @@
-Да, всё понятно. Ты описал контекстную нормализацию (почти как word-embeddings, но на PQ):
-	1.	генерируем кандидат-пары по похожести строк (общий префикс / “почти префикс”)
-	2.	для каждой пары считаем похожесть контекста = сколько общих соседних токенов встречается с обоими
-	3.	на основании этого уже решаем “синоним/вариант”.
+Да, в старом Excel без TEXTSPLIT самый надёжный путь — VBA UDF (пользовательская функция). Это будет:
+	•	строгое совпадение (4000 ≠ 4000298)
+	•	работает с ; без пробелов и с пробелами тоже
+	•	можно посчитать пересечения “строка vs строка”, и протянуть вниз как обычную формулу
 
-Ниже даю рабочий Power Query M-код блоками (вставляешь как отдельные запросы). Я специально сделал так, чтобы всё было без Левенштейна (дорого), но с:
-	•	длиной общего префикса
-	•	“разрешить 1–2 ошибки” в начале (опционально)
-	•	сходством контекстов через Jaccard/Overlap
+Ниже даю готовый макрос.
 
 ⸻
 
-0) Предпосылка
+Вариант 1: VBA-функция CountCommonIDs (самое простое и быстрое)
 
-Есть таблица TokenTable с колонками:
-	•	Artikelnummer
-	•	Token
+1) Вставь код в модуль VBA
+	1.	Alt + F11
+	2.	Insert → Module
+	3.	Вставь код:
 
-Ты дубли и лишние столбцы уберёшь сам — ок.
+Option Explicit
 
-⸻
+' Counts how many IDs from list1 are present in list2 (exact match).
+' IDs are separated by ";".
+' - trims spaces
+' - ignores empty tokens
+' - treats IDs as text (so 4000 != 4000298)
+' - can count unique matches (default) or all matches (set UniqueOnly:=False)
+Public Function CountCommonIDs(ByVal list1 As String, ByVal list2 As String, Optional ByVal UniqueOnly As Boolean = True) As Long
+    Dim dict2 As Object, seen As Object
+    Dim arr1() As String, arr2() As String
+    Dim i As Long, key As String
+    Dim cnt As Long
 
-1) Query: TokenArtikel (dedup)
+    list1 = CStr(list1)
+    list2 = CStr(list2)
 
-let
-    Source = TokenTable,
-    Dedup = Table.Distinct(Source, {"Artikelnummer", "Token"})
-in
-    Dedup
+    ' Quick exits
+    If Len(list1) = 0 Or Len(list2) = 0 Then
+        CountCommonIDs = 0
+        Exit Function
+    End If
 
+    Set dict2 = CreateObject("Scripting.Dictionary")
+    dict2.CompareMode = vbBinaryCompare ' exact, case-sensitive (digits unaffected)
 
-⸻
+    ' Build dictionary of IDs from list2
+    arr2 = Split(list2, ";")
+    For i = LBound(arr2) To UBound(arr2)
+        key = Trim$(arr2(i))
+        If Len(key) > 0 Then
+            If Not dict2.Exists(key) Then dict2.Add key, 1
+        End If
+    Next i
 
-2) Query: TokenDF
+    If UniqueOnly Then
+        Set seen = CreateObject("Scripting.Dictionary")
+        seen.CompareMode = vbBinaryCompare
+    End If
 
-DF = сколько артикулов содержит токен.
+    ' Count matches for IDs from list1
+    arr1 = Split(list1, ";")
+    For i = LBound(arr1) To UBound(arr1)
+        key = Trim$(arr1(i))
+        If Len(key) > 0 Then
+            If dict2.Exists(key) Then
+                If UniqueOnly Then
+                    If Not seen.Exists(key) Then
+                        seen.Add key, 1
+                        cnt = cnt + 1
+                    End If
+                Else
+                    cnt = cnt + 1
+                End If
+            End If
+        End If
+    Next i
 
-let
-    Source = TokenArtikel,
-    DF = Table.Group(Source, {"Token"}, {{"DF", each Table.RowCount(_), Int64.Type}})
-in
-    DF
+    CountCommonIDs = cnt
+End Function
 
+2) Использование в Excel
 
-⸻
+Допустим:
+	•	A2 — первая строка BaseID
+	•	A3 — вторая строка BaseID
 
-3) Query: TokenContext
+Формула:
 
-Это “контекст”: для каждого токена список соседей (другие токены в тех же артикулах) и сколько раз встречались.
+=CountCommonIDs(A2;A3)
 
-let
-    Source = TokenArtikel,
+(В русской/немецкой локали разделитель аргументов обычно ;, у тебя как раз так.)
 
-    // self-join по Artikelnummer => пары токенов внутри артикула
-    J = Table.NestedJoin(Source, {"Artikelnummer"}, Source, {"Artikelnummer"}, "R", JoinKind.Inner),
-    E = Table.ExpandTableColumn(J, "R", {"Token"}, {"CoToken"}),
-    Ren = Table.RenameColumns(E, {{"Token","Token"}}),
-
-    // убрать Token=CoToken
-    NoSelf = Table.SelectRows(Ren, each [Token] <> [CoToken]),
-
-    // частота соседства (можно и просто distinct, но частота полезна)
-    Ctx = Table.Group(NoSelf, {"Token","CoToken"}, {{"C", each Table.RowCount(_), Int64.Type}})
-in
-    Ctx
-
-Если хочешь “чисто множество”, а не частоты: после Ctx можно заменить C на 1.
-
-⸻
-
-4) Функции для похожести строк
-
-4.1 Общий префикс (кол-во совпавших первых букв)
-
-Создай query fnCommonPrefixLen (это функция):
-
-(tokenA as text, tokenB as text) as number =>
-let
-    a = Text.ToList(tokenA),
-    b = Text.ToList(tokenB),
-    n = List.Min({List.Count(a), List.Count(b)}),
-    pairs = List.Zip({List.FirstN(a, n), List.FirstN(b, n)}),
-    flags = List.Transform(pairs, each _{0} = _{1}),
-    // считаем подряд идущие True с начала
-    posFalse = List.PositionOf(flags, false),
-    res = if posFalse = -1 then n else posFalse
-in
-    res
-
-4.2 (Опционально) “почти префикс”: допускаем 1–2 различия в первых N символах
-
-Если хочешь “макс 1/2 буквы отличаются” на старте, делаем упрощённый Hamming на первых N символах (без вставок/удалений, только замены). Это дешево.
-
-Query fnHammingFirstN:
-
-(tokenA as text, tokenB as text, n as number) as number =>
-let
-    a = Text.ToList(Text.Start(tokenA, n)),
-    b = Text.ToList(Text.Start(tokenB, n)),
-    m = List.Min({List.Count(a), List.Count(b)}),
-    pairs = List.Zip({List.FirstN(a, m), List.FirstN(b, m)}),
-    diffs = List.Sum(List.Transform(pairs, each if _{0} = _{1} then 0 else 1))
-in
-    diffs
-
+Протягиваешь вниз — и получаешь количество пересечений между A2 и каждой строкой.
 
 ⸻
 
-5) Query: CandidatePairs
+Частый кейс: “сравнивать всегда с первой строкой”
 
-Генерируем пары токенов “похожи по началу”.
-Чтобы не взорвать вычисления, делаем “корзины” по Prefix4/5 и сравниваем внутри корзины.
+В B3:
 
-Важно: это не Левенштейн по всем 12k×12k, а локально.
+=CountCommonIDs($A$2;A3)
 
-let
-    // берём токены + DF
-    T0 = Table.NestedJoin(TokenDF, {"Token"}, TokenDF, {"Token"}, "x", JoinKind.LeftOuter),
-    // проще: просто TokenDF как список токенов
-    Tokens = TokenDF,
-
-    // добавим длину и Prefix5 (можешь 4/6)
-    AddLen = Table.AddColumn(Tokens, "Len", each Text.Length([Token]), Int64.Type),
-    AddP5  = Table.AddColumn(AddLen, "P5", each Text.Start([Token], 5), type text),
-
-    // self-join по P5 (кандидаты из одной корзины)
-    J = Table.NestedJoin(AddP5, {"P5"}, AddP5, {"P5"}, "R", JoinKind.Inner),
-    E = Table.ExpandTableColumn(J, "R", {"Token","DF","Len"}, {"TokenB","DF_B","LenB"}),
-
-    Ren = Table.RenameColumns(E, {{"Token","TokenA"},{"DF","DF_A"},{"Len","LenA"}}),
-
-    // убрать A=B и оставить одну сторону (чтобы не дублировать)
-    OneSide = Table.SelectRows(Ren, each [TokenA] < [TokenB]),
-
-    // общий префикс и доля совпадения по minLen
-    AddCPL = Table.AddColumn(OneSide, "CPL", each fnCommonPrefixLen([TokenA],[TokenB]), Int64.Type),
-    AddMinLen = Table.AddColumn(AddCPL, "MinLen", each List.Min({[LenA],[LenB]}), Int64.Type),
-    AddRatio = Table.AddColumn(AddMinLen, "PrefixRatio", each Number.From([CPL]) / Number.From([MinLen]), type number),
-
-    // (опционально) разрешаем 1–2 отличия на первых N символах
-    // N берём Min(6, MinLen)
-    AddN = Table.AddColumn(AddRatio, "N", each List.Min({6, [MinLen]}), Int64.Type),
-    AddHam = Table.AddColumn(AddN, "HamN", each fnHammingFirstN([TokenA],[TokenB],[N]), Int64.Type),
-
-    // Фильтр кандидатов:
-    // либо 100% префикс (PrefixRatio=1),
-    // либо почти (>=0.8) и отличий в первых N <=1
-    Cand = Table.SelectRows(AddHam, each
-        ([PrefixRatio] = 1)
-        or ([PrefixRatio] >= 0.8 and [HamN] <= 1)
-    )
-in
-    Cand
-
-На выходе: TokenA, TokenB, DF_A, DF_B, PrefixRatio, HamN …
+и вниз.
 
 ⸻
 
-6) Query: PairContextSim (самое важное)
+Важные нюансы (чтобы было “железно”)
+	•	Функция считает уникальные совпадения по умолчанию.
+То есть если в A3 случайно повторится 123;123, это не даст +2.
+	•	Если хочешь считать “как есть” (включая дубликаты в первой строке), используй третий аргумент:
 
-Теперь для каждой пары кандидатов считаем, сколько общих соседей.
+=CountCommonIDs(A2;A3;FALSE)
 
-Идея:
-	•	берём TokenContext (Token, CoToken)
-	•	для пары (A,B) ищем пересечение множеств CoToken
-
-let
-    Pairs = CandidatePairs,
-
-    // Присоединим контекст A
-    JA = Table.NestedJoin(Pairs, {"TokenA"}, TokenContext, {"Token"}, "CtxA", JoinKind.LeftOuter),
-    EA = Table.ExpandTableColumn(JA, "CtxA", {"CoToken"}, {"CoA"}),
-
-    // Присоединим контекст B (через отдельный join от исходной пары!)
-    JB = Table.NestedJoin(EA, {"TokenB"}, TokenContext, {"Token"}, "CtxB", JoinKind.LeftOuter),
-    EB = Table.ExpandTableColumn(JB, "CtxB", {"CoToken"}, {"CoB"}),
-
-    // Оставляем только строки, где сосед совпал (пересечение)
-    InterRows = Table.SelectRows(EB, each [CoA] = [CoB]),
-
-    // IntersectionCount = сколько общих соседей (distinct)
-    Inter = Table.Group(InterRows, {"TokenA","TokenB"}, {{"Inter", each List.Count(List.Distinct([CoA])), Int64.Type}}),
-
-    // Теперь считаем |CtxA| и |CtxB| (размеры множеств)
-    CtxSize = Table.Group(TokenContext, {"Token"}, {{"CtxSize", each List.Count(List.Distinct([CoToken])), Int64.Type}}),
-
-    AddA = Table.NestedJoin(Inter, {"TokenA"}, CtxSize, {"Token"}, "A", JoinKind.LeftOuter),
-    EA2  = Table.ExpandTableColumn(AddA, "A", {"CtxSize"}, {"CtxA"}),
-
-    AddB = Table.NestedJoin(EA2, {"TokenB"}, CtxSize, {"Token"}, "B", JoinKind.LeftOuter),
-    EB2  = Table.ExpandTableColumn(AddB, "B", {"CtxSize"}, {"CtxB"}),
-
-    // Jaccard по контекстам
-    AddUnion = Table.AddColumn(EB2, "CtxUnion", each [CtxA] + [CtxB] - [Inter], Int64.Type),
-    AddJ = Table.AddColumn(AddUnion, "CtxJaccard", each if [CtxUnion]=0 then null else Number.From([Inter]) / Number.From([CtxUnion]), type number),
-
-    // Containment контекста (вложенность)
-    AddContA = Table.AddColumn(AddJ, "CtxContainA", each if [CtxA]=0 then null else Number.From([Inter]) / Number.From([CtxA]), type number),
-    AddContB = Table.AddColumn(AddContA, "CtxContainB", each if [CtxB]=0 then null else Number.From([Inter]) / Number.From([CtxB]), type number),
-
-    Sorted = Table.Sort(AddContB, {{"CtxJaccard", Order.Descending}, {"Inter", Order.Descending}})
-in
-    Sorted
-
-Теперь у тебя для каждой пары есть реальная “близость” по окружению. Это ровно то, что ты хотел.
 
 ⸻
 
-7) Как из этого сделать “авто-синонимы” (правило)
+Если макросы запрещены политикой компании
 
-Дальше ты выбираешь пороги. Например:
+Скажи — предложу чисто формульный костыль для старого Excel (через вспомогательные колонки / Power Query / FILTERXML — зависит от версии). Но VBA-UDF обычно быстрее и чище.
 
-Обрубок/вариант формы (типа pils ↔ pilsener)
-	•	PrefixRatio >= 0.8
-	•	CtxJaccard >= 0.3 (или 0.4)
-	•	Inter >= 5 (чтобы не на случайных совпадениях)
-
-Почти одно и то же (синоним/вариант написания)
-	•	CtxContainA >= 0.8 или CtxContainB >= 0.8
-	•	Inter >= 10
-
-⸻
-
-8) Как реально “объединить” в канон
-
-После того как ты отфильтровал “сильные пары”, строишь граф и компоненты (как я писал раньше).
-Но теперь ребро куда качественнее: оно основано на контексте, а не на префиксе.
-
-Канон внутри группы выбирай:
-	•	максимальный DF
-	•	при равенстве — длиннее
-
-⸻
-
-Ключевое уточнение про твою цель
-
-Ты хочешь избежать “кучи допущений”. Этот подход хорош тем, что:
-	•	строковый фильтр (prefix/ham) только для генерации кандидатов
-	•	решение принимает контекст (данные)
-
-⸻
-
-Если скажешь, сколько строк получилось в CandidatePairs (после фильтра PrefixRatio/Ham), я подскажу пороги CtxJaccard/Inter, чтобы не перегнуть и не слить лишнее.
+Если хочешь, я могу добавить вторую функцию, которая возвращает список совпавших ID (например, 123;456;789), а не только число.
