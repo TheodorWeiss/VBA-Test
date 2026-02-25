@@ -1,112 +1,57 @@
-Theo, ты правильно чувствуешь — здесь есть несколько потенциально неясных точек. Давай разложим строго по логике.
+let
+    // === Quelle anpassen (z.B. Excel.CurrentWorkbook(){[Name="CleanNameTbl"]}[Content]) ===
+    Source = Excel.CurrentWorkbook(){[Name="CleanNameTbl"]}[Content],
 
-⸻
+    // CleanName als Text absichern
+    #"CleanName as text" = Table.TransformColumns(
+        Source,
+        {{"CleanName", each if _ = null then "" else Text.From(_), type text}}
+    ),
 
-1️⃣ Что почти наверняка означает K-Woche
+    // Tokens erzeugen (Trim, doppelte Spaces entfernen, dann splitten; leere Tokens raus)
+    #"Add Tokens" = Table.AddColumn(
+        #"CleanName as text",
+        "Tokens",
+        each
+            let
+                s0 = Text.Trim([CleanName]),
+                s1 = Text.Combine(List.Select(Text.SplitAny(s0, " "), each _ <> ""), " "),
+                lst = List.Select(Text.Split(s1, " "), each _ <> "")
+            in
+                lst,
+        type list
+    ),
 
-В контексте:
-	•	речь идёт про Ostern
-	•	обсуждается „vor Ostern“
-	•	Haupt­einkauf Mittwoch/Donnerstag
-	•	Samstag
+    // Für jede Zeile: Liste von Records erzeugen {Token, PosFromStart, PosFromEnd}
+    #"Add TokenRecords" = Table.AddColumn(
+        #"Add Tokens",
+        "TokenRecords",
+        each
+            let
+                t = [Tokens],
+                n = List.Count(t),
+                recs =
+                    List.Transform(
+                        List.Positions(t),
+                        (i) => [Token = t{i}, TokenNr = i + 1, TokenNrFromEnd = -(n - i)]
+                    )
+            in
+                recs,
+        type list
+    ),
 
-👉 Очень вероятно, что K-Woche = Karwoche (пасхальная неделя), а не „Kalenderwoche“.
+    // Records zu Zeilen expanden
+    #"Expand TokenRecords" = Table.ExpandListColumn(#"Add TokenRecords", "TokenRecords"),
+    #"Expand Record Fields" = Table.ExpandRecordColumn(
+        #"Expand TokenRecords",
+        "TokenRecords",
+        {"Token", "TokenNr", "TokenNrFromEnd"},
+        {"Token", "TokenNr", "TokenNrFromEnd"}
+    ),
 
-То есть:
-Samstag vor Karwoche
-= суббота перед пасхальной неделей.
+    // Hilfsspalten entfernen
+    #"Remove Helpers" = Table.RemoveColumns(#"Expand Record Fields", {"Tokens"})
+in
+    #"Remove Helpers"
 
-Это логично с точки зрения Bevorratung.
-
-⸻
-
-2️⃣ NL Henstedt
-
-Да, это значит:
-👉 анализ только по одному филиалу (Henstedt).
-
-Это не региональный анализ.
-
-⸻
-
-3️⃣ Самый спорный момент — какой артикль?
-
-Вот здесь действительно неоднозначность.
-
-Что говорит переписка:
-	•	Sven обсуждает конкретно Gyros 800g
-	•	Anna присылает Pivot именно по Gyros 800g
-	•	В теме письма: „SB Fleisch“
-	•	Но исходная формулировка:
-Samstag Artikel Fleisch Plan zu Ist Umsatz und Menge
-
-Это звучит шире, чем один Artikel.
-
-⸻
-
-4️⃣ Что логичнее всего?
-
-С высокой вероятностью:
-
-👉 Изначально речь шла про Samstag-Artikel SB Fleisch
-👉 В процессе фокус сузился до Gyros 800g
-👉 Потому что именно он обсуждался в контексте Ostern
-
-И Anna уже прислала данные именно по Gyros.
-
-Это сильный индикатор, что анализ нужен по этому конкретному Artikel.
-
-⸻
-
-5️⃣ Где остаётся риск?
-
-Риск в том, что:
-	•	формулировка задания шире
-	•	но обсуждение пошло по одному Artikel
-	•	тебе официально никто не написал: „Bitte nur Gyros 800g“
-
-Это и есть слабое место.
-
-⸻
-
-6️⃣ Что я бы сделал на твоём месте
-
-Очень короткое уточнение — без ощущения, что ты не понял задачу.
-
-Пример:
-
-Geht es hier ausschließlich um den Artikel Gyros 800g für NL Henstedt oder um alle SB Fleisch Samstag-Artikel?
-
-Это снимет 100% неопределённости.
-
-⸻
-
-7️⃣ Если не уточнять и делать самому
-
-Тогда наиболее логичная интерпретация:
-	•	NL Henstedt
-	•	Samstag vor Karwoche
-	•	Vergleich 2025 vs 2026
-	•	Fokus: Gyros 800g
-	•	Plan vs Ist
-	•	Umsatz + Menge
-	•	Bewertung der Bevorratung
-
-⸻
-
-8️⃣ Что реально от тебя хотят
-
-Не глобальный Seitenvergleich.
-
-Они хотят ответ на бизнес-вопрос:
-
-👉 „War die Bevorratung vor Ostern passend?“
-👉 „Ist Gyros am Samstag vor Ostern sinnvoll?“
-
-⸻
-
-Theo, здесь ты правильно насторожился — постановка действительно не 100% чистая.
-
-Я бы уточнил одной строкой. Это сэкономит тебе возможную переделку.
-
-Хочешь — сформулирую максимально естественную короткую фразу для Teams.
+Если хочешь, скажи имя твоей исходной таблицы/запроса (как вкладка: CleanNameTbl на скрине или другое) — подставлю точную строку Source = ... под твой файл без ручной правки.
