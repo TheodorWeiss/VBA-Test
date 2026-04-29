@@ -1,121 +1,90 @@
-Sub DiagnoseWeekFilterToSheet()
+Sub SetCurrentYearWeek_CorrectMDX()
 
+    Dim ws As Worksheet
     Dim pt As PivotTable
     Dim pf As PivotField
-    Dim pi As PivotItem
-    Dim outWs As Worksheet
-    Dim r As Long
-    Dim i As Long
+    Dim pivotNames As Variant
+    Dim p As Variant
 
-    Set pt = ActiveSheet.PivotTables("PivotTable1")
+    Dim currentYear As Long
+    Dim currentWeek As Long
+    Dim yearWeekKey As Long
+    Dim mdxValue As String
 
-    Set outWs = ThisWorkbook.Worksheets.Add
-    outWs.Name = "Pivot_Diagnose"
+    Dim changedCount As Long
+    Dim skippedCount As Long
 
-    r = 1
-    outWs.Cells(r, 1).Value = "PivotTable"
-    outWs.Cells(r, 2).Value = pt.Name
-    r = r + 2
+    currentYear = Year(Date)
+    currentWeek = WorksheetFunction.ISOWeekNum(Date)
 
-    For Each pf In pt.PivotFields
-        If InStr(1, pf.Name, "KalenderWoche", vbTextCompare) > 0 _
-           Or InStr(1, pf.Caption, "KalenderWoche", vbTextCompare) > 0 _
-           Or InStr(1, pf.Name, "Woche", vbTextCompare) > 0 Then
+    ' Ключ как в кубе: 202617
+    yearWeekKey = currentYear * 100 + currentWeek
 
-            outWs.Cells(r, 1).Value = "FIELD NAME"
-            outWs.Cells(r, 2).Value = pf.Name
-            r = r + 1
+    mdxValue = "[Datum].[KalenderWoche].[Woche].&[" & yearWeekKey & "]"
 
-            outWs.Cells(r, 1).Value = "CAPTION"
-            outWs.Cells(r, 2).Value = pf.Caption
-            r = r + 1
+    pivotNames = Array("PivotTable1", "PivotTable2", "PivotTable3", "PivotTable4", "PivotTable9", "PivotTable12")
 
-            outWs.Cells(r, 1).Value = "SOURCE NAME"
-            outWs.Cells(r, 2).Value = pf.SourceName
-            r = r + 1
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
 
-            outWs.Cells(r, 1).Value = "CUBE FIELD"
-            outWs.Cells(r, 2).Value = pf.CubeField.Name
-            r = r + 2
+    For Each ws In ThisWorkbook.Worksheets
+        For Each p In pivotNames
 
-            outWs.Cells(r, 1).Value = "VisibleItemsList"
-            r = r + 1
+            Set pt = Nothing
+            Set pf = Nothing
 
             On Error Resume Next
-            For i = LBound(pf.VisibleItemsList) To UBound(pf.VisibleItemsList)
-                outWs.Cells(r, 1).Value = pf.VisibleItemsList(i)
-                r = r + 1
-            Next i
+            Set pt = ws.PivotTables(CStr(p))
             On Error GoTo 0
 
-            r = r + 1
-            outWs.Cells(r, 1).Value = "Visible PivotItems"
-            r = r + 1
+            If Not pt Is Nothing Then
 
-            On Error Resume Next
-            For Each pi In pf.PivotItems
-                If pi.Visible Then
-                    outWs.Cells(r, 1).Value = pi.Name
-                    outWs.Cells(r, 2).Value = pi.Caption
-                    r = r + 1
+                On Error Resume Next
+                Set pf = pt.PivotFields("[Datum].[KalenderWoche].[Woche]")
+                If pf Is Nothing Then Set pf = pt.PivotFields("Datum.KalenderWoche")
+                On Error GoTo 0
+
+                If Not pf Is Nothing Then
+
+                    On Error Resume Next
+
+                    ' Проверка: уже стоит нужная неделя?
+                    If Not IsEmpty(pf.VisibleItemsList) Then
+                        If UBound(pf.VisibleItemsList) >= 0 Then
+                            If pf.VisibleItemsList(0) = mdxValue Then
+                                skippedCount = skippedCount + 1
+                                GoTo NextPivot
+                            End If
+                        End If
+                    End If
+
+                    Err.Clear
+                    pf.VisibleItemsList = Array(mdxValue)
+
+                    If Err.Number = 0 Then
+                        changedCount = changedCount + 1
+                    Else
+                        skippedCount = skippedCount + 1
+                        Err.Clear
+                    End If
+
+                    On Error GoTo 0
+
                 End If
-            Next pi
-            On Error GoTo 0
+            End If
 
-            r = r + 2
+NextPivot:
+        Next p
+    Next ws
 
-        End If
-    Next pf
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
 
-    outWs.Columns.AutoFit
-
-End Sub
-
-
-Sub DiagnoseWeekFilter()
-
-    Dim pt As PivotTable
-    Dim pf As PivotField
-    Dim pi As PivotItem
-    Dim msg As String
-    Dim i As Long
-
-    Set pt = ActiveSheet.PivotTables("PivotTable1")
-
-    msg = "PivotTable: " & pt.Name & vbCrLf & vbCrLf
-
-    For Each pf In pt.PivotFields
-        If InStr(1, pf.Name, "KalenderWoche", vbTextCompare) > 0 _
-           Or InStr(1, pf.Caption, "KalenderWoche", vbTextCompare) > 0 _
-           Or InStr(1, pf.Name, "Woche", vbTextCompare) > 0 Then
-
-            msg = msg & "FIELD NAME: " & pf.Name & vbCrLf
-            msg = msg & "CAPTION: " & pf.Caption & vbCrLf
-            msg = msg & "SOURCE NAME: " & pf.SourceName & vbCrLf
-            msg = msg & "CUBE FIELD: " & pf.CubeField.Name & vbCrLf & vbCrLf
-
-            On Error Resume Next
-            msg = msg & "VisibleItemsList:" & vbCrLf
-            For i = LBound(pf.VisibleItemsList) To UBound(pf.VisibleItemsList)
-                msg = msg & pf.VisibleItemsList(i) & vbCrLf
-            Next i
-            On Error GoTo 0
-
-            msg = msg & vbCrLf & "Visible PivotItems:" & vbCrLf
-
-            On Error Resume Next
-            For Each pi In pf.PivotItems
-                If pi.Visible Then
-                    msg = msg & "Item Name: " & pi.Name & vbCrLf
-                    msg = msg & "Item Caption: " & pi.Caption & vbCrLf
-                    msg = msg & "---" & vbCrLf
-                End If
-            Next pi
-            On Error GoTo 0
-
-        End If
-    Next pf
-
-    MsgBox msg
+    MsgBox "Готово 🚀" & vbCrLf & _
+           "Год: " & currentYear & vbCrLf & _
+           "Неделя: " & currentWeek & vbCrLf & _
+           "Ключ: " & yearWeekKey & vbCrLf & _
+           "Обновлено: " & changedCount & vbCrLf & _
+           "Пропущено: " & skippedCount
 
 End Sub
