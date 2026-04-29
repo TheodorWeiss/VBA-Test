@@ -1,75 +1,62 @@
-Sub SetCurrentYearWeek_CorrectMDX_v2()
+Да, это как раз легко и очень полезно 👍
+Самый простой и надёжный способ — через Timer.
 
-    Dim ws As Worksheet
-    Dim pt As PivotTable
-    Dim pf As PivotField
-    Dim pivotNames As Variant
-    Dim p As Variant
-    Dim yearWeekKey As Long
-    Dim mdxValue As String
-    Dim changedCount As Long
-    Dim skippedCount As Long
-    Dim errText As String
+Как это работает
 
-    yearWeekKey = Year(Date) * 100 + WorksheetFunction.ISOWeekNum(Date)
-    mdxValue = "[Datum].[KalenderWoche].[Woche].&[" & yearWeekKey & "]"
+* Timer возвращает секунды с полуночи
+* разница = длительность выполнения макроса
 
-    pivotNames = Array("PivotTable1", "PivotTable2", "PivotTable3", "PivotTable4", "PivotTable9", "PivotTable12")
+⸻
 
-    Application.ScreenUpdating = False
-    Application.EnableEvents = False
+Добавь в макрос
 
-    For Each ws In ThisWorkbook.Worksheets
-        For Each p In pivotNames
+1. В начало (после объявления переменных):
 
-            Set pt = Nothing
-            Set pf = Nothing
+Dim startTime As Double
+Dim elapsedTime As Double
+startTime = Timer
 
-            On Error Resume Next
-            Set pt = ws.PivotTables(CStr(p))
-            On Error GoTo 0
+⸻
 
-            If Not pt Is Nothing Then
+2. В самый конец (перед MsgBox):
 
-                On Error Resume Next
-                Set pf = pt.PivotFields("[Datum].[KalenderWoche].[Woche]")
-                On Error GoTo 0
+elapsedTime = Timer - startTime
+' если макрос прошёл через полночь (редко, но правильно учесть)
+If elapsedTime < 0 Then elapsedTime = elapsedTime + 86400
 
-                If Not pf Is Nothing Then
+⸻
 
-                    On Error Resume Next
-                    Err.Clear
+3. В MsgBox добавь:
 
-                    pf.VisibleItemsList = Array(mdxValue)
+"Время выполнения: " & _
+Int(elapsedTime / 60) & " мин " & _
+Round(elapsedTime Mod 60, 1) & " сек"
 
-                    If Err.Number = 0 Then
-                        pt.RefreshTable
-                        changedCount = changedCount + 1
-                    Else
-                        errText = errText & pt.Name & ": " & Err.Description & vbCrLf
-                        Err.Clear
-                        skippedCount = skippedCount + 1
-                    End If
+⸻
 
-                    On Error GoTo 0
+Итоговый кусок MsgBox будет такой:
 
-                Else
-                    skippedCount = skippedCount + 1
-                    errText = errText & pt.Name & ": поле Woche не найдено" & vbCrLf
-                End If
+MsgBox "Готово" & vbCrLf & _
+       "Год: " & targetYear & vbCrLf & _
+       "Неделя: " & targetWeek & vbCrLf & _
+       "Ключ: " & yearWeekKey & vbCrLf & _
+       "Обновлено: " & changedCount & vbCrLf & _
+       "Пропущено: " & skippedCount & vbCrLf & vbCrLf & _
+       "Время выполнения: " & _
+       Int(elapsedTime / 60) & " мин " & _
+       Round(elapsedTime Mod 60, 1) & " сек"
 
-            End If
+⸻
 
-        Next p
-    Next ws
+💡 Маленький инсайт
 
-    Application.EnableEvents = True
-    Application.ScreenUpdating = True
+С твоими OLAP-сводными ты сейчас фактически можешь:
+👉 измерять, сколько реально занимает refresh
+👉 и оптимизировать (например, с/без RefreshTable)
 
-    MsgBox "Готово" & vbCrLf & _
-           "Ключ: " & yearWeekKey & vbCrLf & _
-           "Обновлено: " & changedCount & vbCrLf & _
-           "Пропущено: " & skippedCount & vbCrLf & vbCrLf & _
-           errText
+Если хочешь — можем дальше:
 
-End Sub
+* сравнить 2 варианта (с RefreshTable / без)
+* или сделать лог в Excel (замер времени по дням)
+
+Это уже прям уровень “аналитик оптимизирует Excel как систему” 😄
