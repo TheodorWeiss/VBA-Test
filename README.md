@@ -1,74 +1,72 @@
-Да, для иерархии лучше использовать VisibleItemsList, а не CurrentPage.
+Sub DiagnoseWeekFilterToSheet()
 
-Попробуй такой макрос:
-
-Sub SetCurrentYearAndWeekForSelectedPivots()
-    Dim ws As Worksheet
     Dim pt As PivotTable
     Dim pf As PivotField
-    Dim pivotNames As Variant
-    Dim p As Variant
-    
-    Dim currentYear As Long
-    Dim currentWeek As Long
-    Dim mdxWeek As String
-    Dim changedCount As Long
-    Dim skippedCount As Long
-    currentYear = Year(Date)
-    currentWeek = WorksheetFunction.ISOWeekNum(Date)
-    pivotNames = Array("PivotTable1", "PivotTable2", "PivotTable3", "PivotTable4", "PivotTable9", "PivotTable12")
-    ' ВАЖНО: этот MDX-путь может потребовать корректировки под твой куб
-    mdxWeek = "[Datum].[KalenderWoche].&[" & currentYear & "].&[" & currentWeek & "]"
-    Application.ScreenUpdating = False
-    Application.EnableEvents = False
-    For Each ws In ThisWorkbook.Worksheets
-        For Each p In pivotNames
-            Set pt = Nothing
-            Set pf = Nothing
+    Dim pi As PivotItem
+    Dim outWs As Worksheet
+    Dim r As Long
+    Dim i As Long
+
+    Set pt = ActiveSheet.PivotTables("PivotTable1")
+
+    Set outWs = ThisWorkbook.Worksheets.Add
+    outWs.Name = "Pivot_Diagnose"
+
+    r = 1
+    outWs.Cells(r, 1).Value = "PivotTable"
+    outWs.Cells(r, 2).Value = pt.Name
+    r = r + 2
+
+    For Each pf In pt.PivotFields
+        If InStr(1, pf.Name, "KalenderWoche", vbTextCompare) > 0 _
+           Or InStr(1, pf.Caption, "KalenderWoche", vbTextCompare) > 0 _
+           Or InStr(1, pf.Name, "Woche", vbTextCompare) > 0 Then
+
+            outWs.Cells(r, 1).Value = "FIELD NAME"
+            outWs.Cells(r, 2).Value = pf.Name
+            r = r + 1
+
+            outWs.Cells(r, 1).Value = "CAPTION"
+            outWs.Cells(r, 2).Value = pf.Caption
+            r = r + 1
+
+            outWs.Cells(r, 1).Value = "SOURCE NAME"
+            outWs.Cells(r, 2).Value = pf.SourceName
+            r = r + 1
+
+            outWs.Cells(r, 1).Value = "CUBE FIELD"
+            outWs.Cells(r, 2).Value = pf.CubeField.Name
+            r = r + 2
+
+            outWs.Cells(r, 1).Value = "VisibleItemsList"
+            r = r + 1
+
             On Error Resume Next
-            Set pt = ws.PivotTables(CStr(p))
+            For i = LBound(pf.VisibleItemsList) To UBound(pf.VisibleItemsList)
+                outWs.Cells(r, 1).Value = pf.VisibleItemsList(i)
+                r = r + 1
+            Next i
             On Error GoTo 0
-            If Not pt Is Nothing Then
-                On Error Resume Next
-                Set pf = pt.PivotFields("[Datum].[KalenderWoche].[KalenderWoche]")
-                If pf Is Nothing Then Set pf = pt.PivotFields("Datum.KalenderWoche")
-                On Error GoTo 0
-                If Not pf Is Nothing Then
-                    On Error Resume Next
-                    ' Если уже стоит нужная неделя — ничего не делаем
-                    If Not IsEmpty(pf.VisibleItemsList) Then
-                        If UBound(pf.VisibleItemsList) >= 0 Then
-                            If pf.VisibleItemsList(0) = mdxWeek Then
-                                skippedCount = skippedCount + 1
-                                GoTo NextPivot
-                            End If
-                        End If
-                    End If
-                    Err.Clear
-                    pf.VisibleItemsList = Array(mdxWeek)
-                    If Err.Number = 0 Then
-                        changedCount = changedCount + 1
-                    Else
-                        skippedCount = skippedCount + 1
-                        Err.Clear
-                    End If
-                    On Error GoTo 0
+
+            r = r + 1
+            outWs.Cells(r, 1).Value = "Visible PivotItems"
+            r = r + 1
+
+            On Error Resume Next
+            For Each pi In pf.PivotItems
+                If pi.Visible Then
+                    outWs.Cells(r, 1).Value = pi.Name
+                    outWs.Cells(r, 2).Value = pi.Caption
+                    r = r + 1
                 End If
-            End If
-NextPivot:
-        Next p
-    Next ws
-    Application.EnableEvents = True
-    Application.ScreenUpdating = True
-    MsgBox "Готово." & vbCrLf & _
-           "Год: " & currentYear & vbCrLf & _
-           "Неделя: " & currentWeek & vbCrLf & _
-           "Обновлено сводных: " & changedCount & vbCrLf & _
-           "Пропущено: " & skippedCount
+            Next pi
+            On Error GoTo 0
+
+            r = r + 2
+
+        End If
+    Next pf
+
+    outWs.Columns.AutoFit
+
 End Sub
-
-Если не сработает, почти наверняка проблема только в этой строке:
-
-mdxWeek = "[Datum].[KalenderWoche].&[" & currentYear & "].&[" & currentWeek & "]"
-
-Тогда нужно один раз получить точный MDX-ключ выбранной недели через диагностический макрос.
