@@ -1,62 +1,102 @@
-Да, это как раз легко и очень полезно 👍
-Самый простой и надёжный способ — через Timer.
+Окей, делаем нормальную схему:
 
-Как это работает
+Планировщик → cmd.exe → ставит ENV → открывает Excel-файл → Workbook_Open видит ENV → запускает макрос → обновляет → сохраняет → логирует → закрывает Excel.
 
-* Timer возвращает секунды с полуночи
-* разница = длительность выполнения макроса
+1. В ThisWorkbook
 
-⸻
+Private Sub Workbook_Open()
+    If Environ("RUN_AUTOMATION") = "1" Then
+        Call AutoUpdateByScheduler
+    End If
+End Sub
 
-Добавь в макрос
+2. В обычный VBA-модуль
 
-1. В начало (после объявления переменных):
+Sub AutoUpdateByScheduler()
+    On Error GoTo ErrorHandler
+    Dim logPath As String
+    Dim startTime As Date
+    startTime = Now
+    logPath = ThisWorkbook.Path & "\scheduler_log.txt"
+    Call WriteLog(logPath, "START update")
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    Application.EnableEvents = False
+    ThisWorkbook.RefreshAll
+    Application.CalculateUntilAsyncQueriesDone
+    ThisWorkbook.Save
+    Call WriteLog(logPath, "SUCCESS update. Duration: " & Format(Now - startTime, "hh:nn:ss"))
+CleanExit:
+    Application.EnableEvents = True
+    Application.DisplayAlerts = True
+    Application.ScreenUpdating = True
+    Application.Quit
+    Exit Sub
+ErrorHandler:
+    Call WriteLog(logPath, "ERROR: " & Err.Number & " - " & Err.Description)
+    Resume CleanExit
+End Sub
+Sub WriteLog(logPath As String, message As String)
+    Dim f As Integer
+    f = FreeFile
+    Open logPath For Append As #f
+    Print #f, Format(Now, "yyyy-mm-dd hh:nn:ss") & " | " & message
+    Close #f
+End Sub
 
-Dim startTime As Double
-Dim elapsedTime As Double
-startTime = Timer
+3. В Aufgabenplanung → Aktion
 
-⸻
+Programm/Skript:
 
-2. В самый конец (перед MsgBox):
+cmd.exe
 
-elapsedTime = Timer - startTime
-' если макрос прошёл через полночь (редко, но правильно учесть)
-If elapsedTime < 0 Then elapsedTime = elapsedTime + 86400
+Argumente hinzufügen:
 
-⸻
+/c set RUN_AUTOMATION=1 && start "" "C:\Pfad\DeineDatei.xlsm"
 
-3. В MsgBox добавь:
+Пример:
 
-"Время выполнения: " & _
-Int(elapsedTime / 60) & " мин " & _
-Round(elapsedTime Mod 60, 1) & " сек"
+/c set RUN_AUTOMATION=1 && start "" "C:\Users\Theo\Documents\Report.xlsm"
 
-⸻
+Так мы не ищем EXCEL.EXE, а открываем сам файл через ассоциацию Windows.
 
-Итоговый кусок MsgBox будет такой:
+4. Настройки задачи
 
-MsgBox "Готово" & vbCrLf & _
-       "Год: " & targetYear & vbCrLf & _
-       "Неделя: " & targetWeek & vbCrLf & _
-       "Ключ: " & yearWeekKey & vbCrLf & _
-       "Обновлено: " & changedCount & vbCrLf & _
-       "Пропущено: " & skippedCount & vbCrLf & vbCrLf & _
-       "Время выполнения: " & _
-       Int(elapsedTime / 60) & " мин " & _
-       Round(elapsedTime Mod 60, 1) & " сек"
+Во вкладке Allgemein:
 
-⸻
+Nur ausführen, wenn der Benutzer angemeldet ist
 
-💡 Маленький инсайт
+Галочку Mit höchsten Privilegien ausführen лучше снять.
 
-С твоими OLAP-сводными ты сейчас фактически можешь:
-👉 измерять, сколько реально занимает refresh
-👉 и оптимизировать (например, с/без RefreshTable)
+5. Retry в планировщике
 
-Если хочешь — можем дальше:
+Открой задачу → Eigenschaften → вкладка Einstellungen.
 
-* сравнить 2 варианта (с RefreshTable / без)
-* или сделать лог в Excel (замер времени по дням)
+Поставь:
 
-Это уже прям уровень “аналитик оптимизирует Excel как систему” 😄
+Falls Aufgabe fehlschlägt, Neustart alle: 5 Minuten
+
+и:
+
+Neustartversuche: 3
+
+По-немецки это может быть примерно:
+
+Bei Fehler alle 5 Minuten neu starten
+Maximal 3 Neustartversuche
+
+6. Проверка
+
+1. Сохрани файл как .xlsm
+2. Закрой Excel полностью
+3. В Aufgabenplanung нажми правой кнопкой по задаче → Ausführen
+4. Проверь рядом с Excel-файлом файл:
+
+scheduler_log.txt
+
+Там должно появиться что-то вроде:
+
+2026-05-04 07:00:01 | START update
+2026-05-04 07:01:34 | SUCCESS update. Duration: 00:01:33
+
+Главный плюс: при обычном ручном открытии файл не будет обновляться, потому что RUN_AUTOMATION не равен 1.
