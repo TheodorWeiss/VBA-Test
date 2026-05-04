@@ -1,40 +1,26 @@
-Окей, делаем нормальную схему:
+Значит ENV и Workbook_Open уже работают. Проблема теперь внутри макроса: он либо не доходит до RefreshAll, либо RefreshAll не обновляет именно эти сводные.
 
-Планировщик → cmd.exe → ставит ENV → открывает Excel-файл → Workbook_Open видит ENV → запускает макрос → обновляет → сохраняет → логирует → закрывает Excel.
-
-1. В ThisWorkbook
-
-Private Sub Workbook_Open()
-    If Environ("RUN_AUTOMATION") = "1" Then
-        Call AutoUpdateByScheduler
-    End If
-End Sub
-
-2. В обычный VBA-модуль
+Сначала поставь диагностический макрос вместо текущего:
 
 Sub AutoUpdateByScheduler()
-    On Error GoTo ErrorHandler
     Dim logPath As String
-    Dim startTime As Date
-    startTime = Now
     logPath = ThisWorkbook.Path & "\scheduler_log.txt"
-    Call WriteLog(logPath, "START update")
-    Application.ScreenUpdating = False
-    Application.DisplayAlerts = False
-    Application.EnableEvents = False
-    ThisWorkbook.RefreshAll
-    Application.CalculateUntilAsyncQueriesDone
-    ThisWorkbook.Save
-    Call WriteLog(logPath, "SUCCESS update. Duration: " & Format(Now - startTime, "hh:nn:ss"))
-CleanExit:
-    Application.EnableEvents = True
-    Application.DisplayAlerts = True
+    Call WriteLog(logPath, "START macro")
+    Call WriteLog(logPath, "RUN_AUTOMATION=" & Environ("RUN_AUTOMATION"))
+    On Error GoTo ErrorHandler
     Application.ScreenUpdating = True
-    Application.Quit
+    Application.DisplayAlerts = True
+    Application.EnableEvents = True
+    Call WriteLog(logPath, "Before RefreshAll")
+    ThisWorkbook.RefreshAll
+    Call WriteLog(logPath, "After RefreshAll")
+    Application.CalculateUntilAsyncQueriesDone
+    Call WriteLog(logPath, "After CalculateUntilAsyncQueriesDone")
+    ThisWorkbook.Save
+    Call WriteLog(logPath, "SAVED")
     Exit Sub
 ErrorHandler:
     Call WriteLog(logPath, "ERROR: " & Err.Number & " - " & Err.Description)
-    Resume CleanExit
 End Sub
 Sub WriteLog(logPath As String, message As String)
     Dim f As Integer
@@ -44,59 +30,75 @@ Sub WriteLog(logPath As String, message As String)
     Close #f
 End Sub
 
-3. В Aufgabenplanung → Aktion
+И в ThisWorkbook пока так:
 
-Programm/Skript:
+Private Sub Workbook_Open()
+    MsgBox "Workbook_Open работает. RUN_AUTOMATION=" & Environ("RUN_AUTOMATION")
+    If Environ("RUN_AUTOMATION") = "1" Then
+        Call AutoUpdateByScheduler
+    End If
+End Sub
 
-cmd.exe
+После запуска проверь рядом с файлом scheduler_log.txt.
 
-Argumente hinzufügen:
+Если лога нет, значит AutoUpdateByScheduler не вызывается — тогда, скорее всего, макрос лежит не в обычном модуле или называется иначе.
 
-/c set RUN_AUTOMATION=1 && start "" "C:\Pfad\DeineDatei.xlsm"
+Если лог есть и доходит до SAVED, но сводные не меняются — тогда ThisWorkbook.RefreshAll не обновляет твои PivotTables. Тогда надо будет обновлять их явно через:
 
-Пример:
+Dim ws As Worksheet
+Dim pt As PivotTable
+For Each ws In ThisWorkbook.Worksheets
+    For Each pt In ws.PivotTables
+        pt.PivotCache.Refresh
+    Next pt
+Next ws
 
-/c set RUN_AUTOMATION=1 && start "" "C:\Users\Theo\Documents\Report.xlsm"
+Начни с диагностического лога — он сразу покажет, где именно обрыв.
 
-Так мы не ищем EXCEL.EXE, а открываем сам файл через ассоциацию Windows.
 
-4. Настройки задачи
 
-Во вкладке Allgemein:
+Нет, вручную создавать не нужно. Макрос должен сам создать scheduler_log.txt.
 
-Nur ausführen, wenn der Benutzer angemeldet ist
+Если файл не появляется вообще, значит почти наверняка проблема в одном из этих мест:
 
-Галочку Mit höchsten Privilegien ausführen лучше снять.
+1. AutoUpdateByScheduler не вызывается
+2. WriteLog лежит не в обычном модуле
+3. у Excel нет права писать в папку, где лежит файл
+4. ThisWorkbook.Path пустой или неудобный, например файл открыт из Teams/SharePoint/временной папки
 
-5. Retry в планировщике
+Сделай самый простой тест.
 
-Открой задачу → Eigenschaften → вкладка Einstellungen.
+1. В обычный модуль вставь только это
 
-Поставь:
+Sub TestLog()
+    Dim logPath As String
+    logPath = Environ("USERPROFILE") & "\Desktop\scheduler_log_test.txt"
+    Dim f As Integer
+    f = FreeFile
+    Open logPath For Append As #f
+    Print #f, Format(Now, "yyyy-mm-dd hh:nn:ss") & " | TEST"
+    Close #f
+    MsgBox "Log written to: " & logPath
+End Sub
 
-Falls Aufgabe fehlschlägt, Neustart alle: 5 Minuten
+2. Запусти вручную из Excel
 
-и:
+Alt + F8 → TestLog → Ausführen
 
-Neustartversuche: 3
+Если на Desktop появился scheduler_log_test.txt, значит запись работает.
 
-По-немецки это может быть примерно:
+Тогда в основном макросе лучше временно заменить строку:
 
-Bei Fehler alle 5 Minuten neu starten
-Maximal 3 Neustartversuche
+logPath = ThisWorkbook.Path & "\scheduler_log.txt"
 
-6. Проверка
+на:
 
-1. Сохрани файл как .xlsm
-2. Закрой Excel полностью
-3. В Aufgabenplanung нажми правой кнопкой по задаче → Ausführen
-4. Проверь рядом с Excel-файлом файл:
+logPath = Environ("USERPROFILE") & "\Desktop\scheduler_log.txt"
 
-scheduler_log.txt
+Так мы уберём проблему с правами/SharePoint/сетевой папкой.
 
-Там должно появиться что-то вроде:
+3. Если TestLog тоже не создаёт файл
 
-2026-05-04 07:00:01 | START update
-2026-05-04 07:01:34 | SUCCESS update. Duration: 00:01:33
+Тогда Excel/политики безопасности блокируют запись через VBA, но это уже отдельная проблема.
 
-Главный плюс: при обычном ручном открытии файл не будет обновляться, потому что RUN_AUTOMATION не равен 1.
+Сначала проверь именно TestLog через Alt + F8.
