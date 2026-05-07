@@ -1,106 +1,62 @@
-Да, логика такая: каждая CUBE-формула потенциально обращается к кубу, хотя Excel частично кэширует запросы. Поэтому много формул = тормоза.
+Да, вижу. Для категории правильная иерархия, судя по формуле сверху, такая:
 
-Для твоей первой цели нужен один CUBEMENGE / CUBESET, который сразу попросит у куба только Top/Flop категории.
+[Artikel].[Nettowarengruppenstruktur].[Hauptwarengruppe]
 
-Цель
+Попробуй сначала самый простой тест CUBEMENGE:
 
-Не все категории, а только:
+=CUBEMENGE("Cloud NDW Prod111";"{[Artikel].[Nettowarengruppenstruktur].[Hauptwarengruppe].&[26 - WURST]}";"Test")
 
-Top 5 Kategorien nach:
-[Abweichung Feld 1] + [Abweichung Feld 2]
-Flop 5 Kategorien nach:
-[Abweichung Feld 1] + [Abweichung Feld 2]
+Потом рядом вытащи элемент:
 
-Немецкие функции
+=CUBERANGEELEMENT("Cloud NDW Prod111";A1;1)
 
-Английская	Немецкая
-CUBESET	CUBEMENGE
-CUBERANKEDMEMBER	CUBERANGEELEMENT
-CUBEVALUE	CUBEWERT
+где A1 — ячейка с CUBEMENGE.
 
-1. Flop 5 категорий
+Если это заработает, тогда список всех Hauptwarengruppe:
 
-В отдельную ячейку, например B2:
+=CUBEMENGE("Cloud NDW Prod111";"[Artikel].[Nettowarengruppenstruktur].[Hauptwarengruppe].MEMBERS";"Alle Hauptwarengruppen")
+
+А уже Flop 5 по сумме двух Abweichung-полей должен выглядеть примерно так:
 
 =CUBEMENGE(
-"Название_соединения";
+"Cloud NDW Prod111";
 "BOTTOMCOUNT(
-    [Kategorie].[Kategorie].[Kategorie].MEMBERS,
-    5,
-    ([Measures].[Abweichung_1] + [Measures].[Abweichung_2])
+[Artikel].[Nettowarengruppenstruktur].[Hauptwarengruppe].MEMBERS;
+5;
+([Measures].[Abweichung_1] + [Measures].[Abweichung_2])
 )";
-"Flop 5 Kategorien"
+"Flop 5 Hauptwarengruppen"
 )
 
-2. Top 5 категорий
-
-Например E2:
+Но внутри MDX, возможно, нужны запятые, а не ;. Тогда вариант:
 
 =CUBEMENGE(
-"Название_соединения";
-"TOPCOUNT(
-    [Kategorie].[Kategorie].[Kategorie].MEMBERS,
-    5,
-    ([Measures].[Abweichung_1] + [Measures].[Abweichung_2])
-)";
-"Top 5 Kategorien"
-)
-
-3. Вывести элементы из набора
-
-Под Flop 5:
-
-=CUBERANGEELEMENT("Название_соединения";$B$2;1)
-
-ниже:
-
-=CUBERANGEELEMENT("Название_соединения";$B$2;2)
-
-и так до 5.
-
-Для Top 5 аналогично, только ссылка на $E$2.
-
-4. Вывести значение суммы Abweichung
-
-Рядом с категорией:
-
-=CUBEWERT(
-"Название_соединения";
-A4;
-"[Measures].[Abweichung_1]"
-)
-+
-CUBEWERT(
-"Название_соединения";
-A4;
-"[Measures].[Abweichung_2]"
-)
-
-Где A4 — ячейка с категорией из CUBERANGEELEMENT.
-
-Что нужно заменить
-
-Тебе надо взять из уже созданных CUBE-формул:
-
-1. Название соединения
-    Обычно выглядит как "ThisWorkbookDataModel" или название Cloud NDW connection.
-2. MDX-путь категории
-    Что-то вроде:
-
-[Artikelhierarchie].[Kategorie].[Kategorie].MEMBERS
-
-3. Имена двух measures Abweichung
-    Например:
-
-[Measures].[Abweichung Umsatz]
-[Measures].[Abweichung Absatz]
-
-Важно
-
-Если твои Abweichung уже считаются как measures в кубе, то выражение:
-
+"Cloud NDW Prod111";
+"BOTTOMCOUNT(
+[Artikel].[Nettowarengruppenstruktur].[Hauptwarengruppe].MEMBERS,
+5,
 ([Measures].[Abweichung_1] + [Measures].[Abweichung_2])
+)";
+"Flop 5 Hauptwarengruppen"
+)
 
-должно работать прямо внутри TOPCOUNT / BOTTOMCOUNT.
+Top 5:
 
-Начни именно с Flop 5 Kategorien. Когда это заработает, Top 5 делается почти копированием с заменой BOTTOMCOUNT на TOPCOUNT.
+=CUBEMENGE(
+"Cloud NDW Prod111";
+"TOPCOUNT(
+[Artikel].[Nettowarengruppenstruktur].[Hauptwarengruppe].MEMBERS,
+5,
+([Measures].[Abweichung_1] + [Measures].[Abweichung_2])
+)";
+"Top 5 Hauptwarengruppen"
+)
+
+Тебе надо заменить только:
+
+[Measures].[Abweichung_1]
+[Measures].[Abweichung_2]
+
+на точные имена твоих двух готовых полей.
+
+Начни с самого первого теста с {...[26 - WURST]}. Если даже он даёт #NV, значит CUBEMENGE в твоём кубе не принимает такой MDX-set, и тогда надо идти через Pivot-Wertfilter, а не через CUBESET.
