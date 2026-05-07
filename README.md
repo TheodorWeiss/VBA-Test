@@ -1,62 +1,26 @@
-Да, вижу. Для категории правильная иерархия, судя по формуле сверху, такая:
+Конечно, Theo. Вот краткие тезисы на немецком:
 
-[Artikel].[Nettowarengruppenstruktur].[Hauptwarengruppe]
+Kurzfazit KW18 – Paulaner Spezi & Limo
 
-Попробуй сначала самый простой тест CUBEMENGE:
+* Die stärkste Aktion war 2 Kisten für 20 €. Diese Variante erzielte den höchsten Umsatz pro Filiale sowie die höchsten Werte bei Bons und Umsatz je Bon.
+* 2 Kisten für 21 € lag deutlich darunter. Trotz ähnlicher Aktionsmechanik war die Performance schwächer als bei 20 €.
+* Die Variante 1 Kiste für 9,99 € zeigte ebenfalls gute Ergebnisse, blieb aber pro Filiale hinter der 20-€-Aktion zurück.
+* Im direkten Vergleich spricht vieles dafür, dass der Preisanker „2 Kisten für 20 €“ für die Kunden attraktiver und verständlicher war als „2 Kisten für 21 €“.
+* Gegenüber dem Vorjahr ist der Umsatz in allen Varianten gestiegen, besonders stark bei 9,99 € und 20 €.
+* Die Anzahl der teilnehmenden Filialen unterscheidet sich zwischen den Varianten, daher sollte der Fokus stärker auf Umsatz pro Filiale, Bons pro Filiale und Umsatz je Bon liegen.
+* Insgesamt zeigt sich: Die 20-€-Mechanik liefert die beste Performance und sollte für vergleichbare Aktionen bevorzugt geprüft werden.
 
-=CUBEMENGE("Cloud NDW Prod111";"{[Artikel].[Nettowarengruppenstruktur].[Hauptwarengruppe].&[26 - WURST]}";"Test")
+* Да, можно, но аккуратно: не по общему обороту, а по показателям pro Filiale, потому что количество филиалов разное.
 
-Потом рядом вытащи элемент:
+По данным на слайде лучшая акция — 2 Kisten für 20 €.
 
-=CUBERANGEELEMENT("Cloud NDW Prod111";A1;1)
+Ключевые аргументы:
 
-где A1 — ячейка с CUBEMENGE.
+* Umsatz pro Filiale: 1.161 € — самый высокий показатель.
+* Bons pro Filiale: 276 — ниже, чем у 9,99 €, но выше, чем у 21 €.
+* Umsatz pro Bon: 11,565 € — заметно выше, чем у 9,99 €.
+* По сравнению с 2 Kisten für 21 €, акция 20 € почти по всем важным KPI лучше.
 
-Если это заработает, тогда список всех Hauptwarengruppe:
+Формулировка по-немецки:
 
-=CUBEMENGE("Cloud NDW Prod111";"[Artikel].[Nettowarengruppenstruktur].[Hauptwarengruppe].MEMBERS";"Alle Hauptwarengruppen")
-
-А уже Flop 5 по сумме двух Abweichung-полей должен выглядеть примерно так:
-
-=CUBEMENGE(
-"Cloud NDW Prod111";
-"BOTTOMCOUNT(
-[Artikel].[Nettowarengruppenstruktur].[Hauptwarengruppe].MEMBERS;
-5;
-([Measures].[Abweichung_1] + [Measures].[Abweichung_2])
-)";
-"Flop 5 Hauptwarengruppen"
-)
-
-Но внутри MDX, возможно, нужны запятые, а не ;. Тогда вариант:
-
-=CUBEMENGE(
-"Cloud NDW Prod111";
-"BOTTOMCOUNT(
-[Artikel].[Nettowarengruppenstruktur].[Hauptwarengruppe].MEMBERS,
-5,
-([Measures].[Abweichung_1] + [Measures].[Abweichung_2])
-)";
-"Flop 5 Hauptwarengruppen"
-)
-
-Top 5:
-
-=CUBEMENGE(
-"Cloud NDW Prod111";
-"TOPCOUNT(
-[Artikel].[Nettowarengruppenstruktur].[Hauptwarengruppe].MEMBERS,
-5,
-([Measures].[Abweichung_1] + [Measures].[Abweichung_2])
-)";
-"Top 5 Hauptwarengruppen"
-)
-
-Тебе надо заменить только:
-
-[Measures].[Abweichung_1]
-[Measures].[Abweichung_2]
-
-на точные имена твоих двух готовых полей.
-
-Начни с самого первого теста с {...[26 - WURST]}. Если даже он даёт #NV, значит CUBEMENGE в твоём кубе не принимает такой MDX-set, и тогда надо идти через Pivot-Wertfilter, а не через CUBESET.
+Auf Basis der vorliegenden KPIs war die Aktion „2 Kisten für 20 €“ am erfolgreichsten. Entscheidend ist dabei nicht der absolute Umsatz, sondern der Umsatz pro Filiale. Diese Variante erzielte mit 1.161 € den höchsten Umsatz pro Filiale und lag auch bei den Bons pro Filiale sowie beim Umsatz je Bon über der 21-€-Mechanik. Daher erscheint die 20-€-Aktion im direkten Vergleich als die stärkste Variante.
