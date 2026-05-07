@@ -1,26 +1,24 @@
-Конечно, Theo. Вот краткие тезисы на немецком:
+Да, ты прав. Я перепутала строки. Правильное чтение такое:
 
-Kurzfazit KW18 – Paulaner Spezi & Limo
+1. 20 €
+    * Umsatz pro Filiale: 1.161
+    * Anz Bons pro Filiale: 276
+    * Ums Bon pro Filiale: 11.565
+2. 9,99 €
+    * Umsatz pro Filiale: 933
+    * Anz Bons pro Filiale: 428
+    * Ums Bon pro Filiale: 16.603
+3. 21 €
+    * Umsatz pro Filiale: 768
+    * Anz Bons pro Filiale: 549
+    * Ums Bon pro Filiale: 22.182
 
-* Die stärkste Aktion war 2 Kisten für 20 €. Diese Variante erzielte den höchsten Umsatz pro Filiale sowie die höchsten Werte bei Bons und Umsatz je Bon.
-* 2 Kisten für 21 € lag deutlich darunter. Trotz ähnlicher Aktionsmechanik war die Performance schwächer als bei 20 €.
-* Die Variante 1 Kiste für 9,99 € zeigte ebenfalls gute Ergebnisse, blieb aber pro Filiale hinter der 20-€-Aktion zurück.
-* Im direkten Vergleich spricht vieles dafür, dass der Preisanker „2 Kisten für 20 €“ für die Kunden attraktiver und verständlicher war als „2 Kisten für 21 €“.
-* Gegenüber dem Vorjahr ist der Umsatz in allen Varianten gestiegen, besonders stark bei 9,99 € und 20 €.
-* Die Anzahl der teilnehmenden Filialen unterscheidet sich zwischen den Varianten, daher sollte der Fokus stärker auf Umsatz pro Filiale, Bons pro Filiale und Umsatz je Bon liegen.
-* Insgesamt zeigt sich: Die 20-€-Mechanik liefert die beste Performance und sollte für vergleichbare Aktionen bevorzugt geprüft werden.
+Корректный вывод:
 
-* Да, можно, но аккуратно: не по общему обороту, а по показателям pro Filiale, потому что количество филиалов разное.
+20 € — лучшая акция по Umsatz pro Filiale.
+21 € — лучшая по Anzahl Bons pro Filiale и Umsatz Bon pro Filiale.
+9,99 € — средний вариант между ними.
 
-По данным на слайде лучшая акция — 2 Kisten für 20 €.
+Поэтому нельзя просто сказать, что одна акция “лучшая” во всём. Лучше так:
 
-Ключевые аргументы:
-
-* Umsatz pro Filiale: 1.161 € — самый высокий показатель.
-* Bons pro Filiale: 276 — ниже, чем у 9,99 €, но выше, чем у 21 €.
-* Umsatz pro Bon: 11,565 € — заметно выше, чем у 9,99 €.
-* По сравнению с 2 Kisten für 21 €, акция 20 € почти по всем важным KPI лучше.
-
-Формулировка по-немецки:
-
-Auf Basis der vorliegenden KPIs war die Aktion „2 Kisten für 20 €“ am erfolgreichsten. Entscheidend ist dabei nicht der absolute Umsatz, sondern der Umsatz pro Filiale. Diese Variante erzielte mit 1.161 € den höchsten Umsatz pro Filiale und lag auch bei den Bons pro Filiale sowie beim Umsatz je Bon über der 21-€-Mechanik. Daher erscheint die 20-€-Aktion im direkten Vergleich als die stärkste Variante.
+Aus Umsatzsicht war die 20-€-Mechanik die stärkste Variante, da sie den höchsten Umsatz pro Filiale erzielt hat. Die 21-€-Mechanik zeigte dagegen die höchste Kundenaktivierung mit den meisten Bons pro Filiale und dem höchsten Bon-Umsatz pro Filiale. Daher hängt die Bewertung vom Ziel der Aktion ab: Umsatzmaximierung spricht für 20 €, Kundenfrequenz und Bon-Anzahl sprechen für 21 €.
